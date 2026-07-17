@@ -7,9 +7,6 @@
     UP      + 不可达            -> UP     ，失败计数 +1；达到阈值则 DOWN + 通知
     DOWN    + 可达              -> DOWN   ，恢复计数 +1；达到阈值则 UP + 通知
     DOWN    + 不可达            -> DOWN   ，失败计数 +1，不通知
-
-状态机与 fping 解耦：只要传入的 ``Detector`` 实现
-``detect() -> {name: bool}``，可以替换为 TCP / HTTP / SSH 检测而无需改核心。
 """
 from __future__ import annotations
 
@@ -19,7 +16,7 @@ from datetime import datetime
 from typing import Dict, List
 
 from database import Database
-from detector import Detector
+from detector import FpingDetector
 from models import EventType, Host, HostStatus
 from notifier import Notifier
 
@@ -131,7 +128,7 @@ class StateMachine:
 class Scheduler:
     """单次执行入口：调用方决定调度节奏（systemd timer / cron）。"""
 
-    def __init__(self, cfg: dict, db: Database, detector: Detector,
+    def __init__(self, cfg: dict, db: Database, detector: FpingDetector,
                  notifier: Notifier):
         self.cfg = cfg
         self.db = db

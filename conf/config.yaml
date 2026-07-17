@@ -3,7 +3,7 @@ interval: 30                  # 检测周期（秒）
 failure_threshold: 3          # 连续失败多少次才判定 DOWN
 recovery_threshold: 2         # 连续成功多少次才恢复 UP
 
-database: state.db
+database: data/state.db       # SQLite 路径（相对 WORKDIR）
 
 # fping 选项：每个周期一次批量化调用
 fping:
@@ -19,6 +19,11 @@ logging:
   dir: logs
   backup_days: 14
   format: json                # json（logstash json_lines）/ text（人类可读）
+
+# 健康检查：docker HEALTHCHECK / k8s readinessProbe 调 `python monitor.py healthcheck`
+# gateway 是 fping 探活的烟测地址，fping 能 ping 通它代表 fping 工具链 + 网络都 OK
+healthcheck:
+  gateway: 1.1.1.1            # Cloudflare DNS，公共可达
 
 notify:
   enabled: true

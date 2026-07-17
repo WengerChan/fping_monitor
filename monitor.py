@@ -1,16 +1,13 @@
 """进程入口。
 
-只支持容器常驻部署：进程启动后按 ``config.interval`` 周期循环跑检测。
-**配置和主机列表支持热加载**：
+支持两个运行模式：
 
-  * 每轮循环开头用 mtime 检查 config.yaml / server.yaml，变了就重读
-  * 收到 ``SIGHUP`` 信号立刻强制 reload（无需等下一轮）
-  * 变更后自动重建检测器/通知器/状态机，并把新主机列表同步进数据库
+  * ``python monitor.py``（默认）—— 长驻主循环
+  * ``python monitor.py healthcheck`` —— 一次性健康检查，0 表示健康
 
-用法：
-    python monitor.py                            # 默认配置
-    python monitor.py --config /etc/x.yaml --servers /etc/y.yaml
-    docker kill -s HUP fping-monitor             # 容器里手动触发重载
+健康检查内容（给 docker HEALTHCHECK 用）：
+    1. 能否打开 SQLite 数据库
+    2. fping 工具链是否可用（用 fping 探一次 config.healthcheck.gateway）
 """
 from __future__ import annotations
 
@@ -23,7 +20,7 @@ from pathlib import Path
 from typing import Optional, Tuple
 
 from database import Database
-from detector import Detector, FpingDetector
+from detector import FpingDetector
 from notifier import Notifier
 from scheduler import Scheduler
 from util import ConfigWatcher, load_yaml, setup_logging
@@ -32,18 +29,14 @@ log = logging.getLogger("fping_monitor")
 
 
 # ---------------------------------------------------------------------------
-# 组件构建：从 cfg 装配 Detector + Notifier + Scheduler
+# 组件构建
 # ---------------------------------------------------------------------------
 
 
-def build_scheduler(cfg: dict, db: Database) -> Tuple[Scheduler, Notifier, Detector]:
-    """根据当前 cfg 构建 Scheduler，配置变更时会重新调用。
-
-    返回 ``(scheduler, notifier, detector)`` —— notifier/detector 也单独返回，
-    方便测试时验证是否真的重建了。
-    """
+def build_scheduler(cfg: dict, db: Database) -> Tuple[Scheduler, Notifier, FpingDetector]:
+    """根据当前 cfg 构建 Scheduler，配置变更时会重新调用。"""
     fping_cfg = cfg.get("fping", {}) or {}
-    detector: Detector = FpingDetector(
+    detector: FpingDetector = FpingDetector(
         count=int(fping_cfg.get("count", 1)),
         interval_ms=int(fping_cfg.get("interval_ms", 10)),
         timeout_ms=int(fping_cfg.get("timeout_ms", 500)),
@@ -67,7 +60,47 @@ def init_logging_from_cfg(cfg: dict) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 常驻主循环
+# 健康检查：CLI 子命令形式，给 docker HEALTHCHECK 用
+# ---------------------------------------------------------------------------
+
+
+def run_healthcheck(cfg: dict) -> int:
+    """返回 0 = 健康，1 = 不健康。
+
+    检查项：
+        1. SQLite 能打开
+        2. fping 能探到 healthcheck.gateway 指定的地址
+    """
+    failures: list[str] = []
+
+    # 1) SQLite 连通性
+    try:
+        db_path = cfg.get("database", "state.db")
+        Database(db_path).list_hosts()           # 触发一次真实读写
+    except Exception as e:                        # noqa: BLE001
+        failures.append(f"db: {e}")
+
+    # 2) fping 探活
+    gateway = (cfg.get("healthcheck") or {}).get("gateway", "1.1.1.1")
+    try:
+        det = FpingDetector(timeout_ms=500, retry=0)
+        # 造一个临时 host 测一次，不入库
+        from models import Host
+        alive = det.detect([Host(name="__hc__", ip=gateway)])
+        if not alive.get("__hc__"):
+            failures.append(f"fping: cannot reach {gateway}")
+    except Exception as e:                        # noqa: BLE001
+        failures.append(f"fping: {e}")
+
+    if failures:
+        print("UNHEALTHY: " + "; ".join(failures), file=sys.stderr)
+        return 1
+    print("OK")
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# 长驻主循环
 # ---------------------------------------------------------------------------
 
 
@@ -137,7 +170,7 @@ def run_daemon(config_path: str, servers_path: str) -> None:
 
 
 def main(argv: Optional[list] = None) -> None:
-    """CLI 入口：解析参数 → 启动常驻循环（热加载由 run_daemon 内部处理）。"""
+    """CLI 入口：默认长驻；``healthcheck`` 子命令用于 docker HEALTHCHECK。"""
     parser = argparse.ArgumentParser(
         prog="fping_monitor",
         description="fping-monitor 长驻容器主程序，支持配置热加载。",
@@ -146,14 +179,22 @@ def main(argv: Optional[list] = None) -> None:
                         help="全局配置文件路径")
     parser.add_argument("--servers", default="conf/server.yaml",
                         help="主机列表文件路径")
+
+    sub = parser.add_subparsers(dest="cmd", required=True)
+    sub.add_parser("run", help="（默认）启动长驻主循环")
+    sub.add_parser("healthcheck", help="一次性健康检查，0=健康 1=不健康")
+
     args = parser.parse_args(argv)
 
-    # 启动前先做一次"语法级"预检，避免热加载时才发现配置写错
+    cfg = load_yaml(args.config)
+
+    if args.cmd == "healthcheck":
+        sys.exit(run_healthcheck(cfg))
+
+    # run：启动前预检一次，避免配置写错时容器无限重启
     try:
-        load_yaml(args.config)
         load_yaml(args.servers)
     except Exception as e:
-        # 此时 logger 还没初始化，直接打 stderr
         print(f"配置加载失败：{e}", file=sys.stderr)
         sys.exit(2)
 

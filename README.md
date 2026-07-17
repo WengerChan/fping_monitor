@@ -17,8 +17,10 @@ SQLite + log volumes.
 - All state in SQLite, all configuration in YAML.
 - Hosts carry **business tags** (e.g. `prod`, `db`, `shanghai`) that show up
   in alert messages for faster triage.
-- Pluggable `Detector` and `Channel` interfaces — add TCP / HTTP / SSH
-  probes or new notification channels without touching the core.
+- Hosts carry **business tags** (e.g. `prod`, `db`, `shanghai`) that show up
+  in alert messages for faster triage.
+- Pluggable `Channel` interface — add Email / Slack / Cuckoo channels
+  without touching the core.
 - Daily rotating logs via `logging`, never `print`.
 - Built-in DingTalk channel (markdown + signature), with a Cuckoo stub
   reserved for your internal alert platform.
@@ -244,23 +246,6 @@ becomes `web-10.1.2.1` ... `web-10.1.2.14` (14 rows, tags propagated).
 (protects against accidental `0.0.0.0/0`). Violations abort the upsert
 without partial writes.
 
-## Adding a new probe (TCP / HTTP / SSH)
-
-Implement the `Detector` protocol and inject it into `Scheduler`:
-
-```python
-class HttpsDetector:
-    def detect(self, hosts): ...
-
-# in monitor.py build_components:
-scheduler = Scheduler(cfg=cfg, db=db,
-                      detector=CompositeDetector(FpingDetector(...), HttpsDetector(...)),
-                      notifier=notifier)
-```
-
-`merge_results(*maps)` in `detector.py` ANDs results across detectors so
-you can require "ping AND https" without any other change.
-
 ## Adding a new channel (Cuckoo, email, …)
 
 1. Subclass in `notifier.py` (mirror `DingTalkChannel`).
@@ -278,6 +263,25 @@ notify:
 Cuckoo is currently a stub that raises `NotImplementedError` on
 construction — it shows up in `_CHANNELS` so config validation works,
 but the channel is skipped until you implement it.
+
+## Health check (docker HEALTHCHECK)
+
+The container has a built-in `HEALTHCHECK` that runs
+
+```bash
+python monitor.py healthcheck
+```
+
+It does exactly two things:
+
+1. Opens the SQLite database and reads the host list
+2. Runs `fping` once against `healthcheck.gateway` (default `1.1.1.1`)
+
+Exit code `0` = healthy, `1` = unhealthy. With `docker compose ps` you
+see the status; with `docker inspect` you get the full output.
+
+The gateway field is just a reachability smoke test — change it to
+whatever address you trust to be up (your router, an internal VIP, etc.).
 
 ## Tests
 

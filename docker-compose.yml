@@ -7,12 +7,21 @@ services:
     container_name: fping-monitor
     restart: unless-stopped
     volumes:
-      # 配置目录整体挂载，往 conf/ 里加新 YAML（dev 模式、额外 hosts 文件）不用改 compose
+      # 配置目录：单目录挂载，加新 YAML 不用改 compose
       - ./conf:/app/conf:ro
-      - ./state.db:/app/state.db
+      # 数据目录：SQLite 状态库持久化
+      - ./data:/app/data
+      # 日志目录：进程内 logging 输出
       - ./logs:/app/logs
     environment:
       # 钉钉 Webhook 通过环境变量传入，避免密钥写进 YAML
       DINGTALK_WEBHOOK: ${DINGTALK_WEBHOOK:-}
     # 默认就是常驻模式
-    command: ["python", "monitor.py"]
+    command: ["python", "monitor.py", "run"]
+    # 容器日志：仅保留 5 个滚动文件，每个最大 100M
+    #   超出后由 Docker 守护进程自动 rotate
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "5"

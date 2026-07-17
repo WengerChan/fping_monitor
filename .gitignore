@@ -11,10 +11,8 @@ __pycache__/
 venv/
 
 # Project state
-state.db
-state.db-journal
-state.db-wal
-state.db-shm
+data/*.db
+data/*.db-*
 logs/*.log
 logs/*.log.*
 

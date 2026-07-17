@@ -16,8 +16,7 @@
 - 状态持久化用 SQLite，配置用 YAML。
 - 主机支持**业务标签**（如 `prod` / `db` / `shanghai`），告警消息中
   展示方便快速定位。
-- `Detector` / `Channel` 都是接口协议，新增 TCP / HTTP / SSH 探活或
-  新通知渠道不用改核心逻辑。
+- `Channel` 是接口协议，新增邮件 / Slack / 布谷鸟等通知渠道不用改核心逻辑。
 - 日志用 `logging` 库按天滚动，全项目不允许 `print`。
 - 内置钉钉渠道（markdown + 加签），布谷鸟作为占位渠道预留扩展点。
 
@@ -233,25 +232,6 @@ hosts:
 
 **安全护栏**：单条 spec 最多展开 1024 个主机（防止误写 `0.0.0.0/0` 撑爆数据库）。超过会立即报错，配置不会部分生效。
 
-## 新增探活方式（TCP / HTTP / SSH）
-
-实现 `Detector` 协议后注入 `Scheduler` 即可：
-
-```python
-class HttpsDetector:
-    def detect(self, hosts): ...
-
-# monitor.py build_components 里
-scheduler = Scheduler(
-    cfg=cfg, db=db,
-    detector=CompositeDetector(FpingDetector(...), HttpsDetector(...)),
-    notifier=notifier,
-)
-```
-
-`detector.py` 里的 `merge_results(*maps)` 会把所有检测器结果做 AND 合并，
-因此可以配置成"ping 通 AND https 通"才视为 UP，无需改动核心代码。
-
 ## 新增通知渠道（布谷鸟、邮件、Slack…）
 
 1. 在 `notifier.py` 里仿照 `DingTalkChannel` 实现一个新类。
@@ -274,6 +254,25 @@ scheduler = Scheduler(
 布谷鸟目前是占位类，构造时立即抛 `NotImplementedError`——在 `_CHANNELS`
 里有名字所以配置可以校验，但 `Notifier.from_config` 会跳过它。等你实现
 完直接启用即可。
+
+## 健康检查（docker HEALTHCHECK）
+
+容器内置 HEALTHCHECK，命令是：
+
+```bash
+python monitor.py healthcheck
+```
+
+只做两件事：
+
+1. 打开 SQLite 数据库，读出主机列表
+2. 用 fping 探一次 `healthcheck.gateway`（默认 `1.1.1.1`）
+
+退出码 `0` = 健康，`1` = 不健康。`docker compose ps` 状态栏直接显示，
+`docker inspect` 看完整输出。
+
+`healthcheck.gateway` 只是个可达性烟测地址，可以改成你信任的任意地址
+（路由器、内网 VIP 等）。
 
 ## 测试
 

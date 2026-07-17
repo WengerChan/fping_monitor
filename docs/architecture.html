@@ -510,22 +510,12 @@ cp conf/server.yaml conf/server.local.yaml
   <!-- 7. 扩展点 -->
   <section>
     <h3>07 · 扩展点</h3>
-    <h2 class="serif">加新检测器 / 新通知渠道，核心三件套不动</h2>
+    <h2 class="serif">加新通知渠道，核心三件套不动</h2>
     <table>
       <thead>
         <tr><th style="width:22%">想加什么</th><th>实现什么</th><th style="width:22%">在哪里注册</th></tr>
       </thead>
       <tbody>
-        <tr>
-          <td>TCP / HTTP / SSH 探活</td>
-          <td>实现 <code>Detector.detect(hosts) -&gt; {name: bool}</code></td>
-          <td><code>Scheduler(detector=...)</code></td>
-        </tr>
-        <tr>
-          <td>"ping AND https" 复合探活</td>
-          <td>用 <code>merge_results</code> 把多个 detector 做 AND</td>
-          <td>同上行</td>
-        </tr>
         <tr>
           <td>邮件告警</td>
           <td>仿 <code>DingTalkChannel</code> 写 <code>notify_down/recover</code></td>
