@@ -146,12 +146,13 @@
     <h1 class="serif">fping-monitor · 代码地图</h1>
     <p class="lede">
       单进程长驻容器，6 个 <code>.py</code> + 1 个 DDL + 2 个 YAML。核心是
-      <strong>批量化 fping + 状态机防抖 + 可插拔通知</strong>。这一页用 4 张图带你看清：
-      模块怎么分、数据怎么流、状态怎么变、哪里可以扩展。
+      <strong>批量化 fping + 状态机防抖 + 可插拔通知 + 配置热加载</strong>。这一页用
+      多张图带你看清：模块怎么分、数据怎么流、状态怎么变、配置怎么热更、哪里可以扩展。
     </p>
     <div class="pills">
       <span class="pill">容器常驻</span>
       <span class="pill">单进程</span>
+      <span class="pill">热加载</span>
       <span class="pill">DingTalk · 完整</span>
       <span class="pill amber">Cuckoo · 占位</span>
       <span class="pill">Host Tags</span>
@@ -340,6 +341,50 @@ stateDiagram-v2
     </table>
   </section>
 
+  <!-- 5.5 热加载机制 -->
+  <section>
+    <h3>05.5 · 热加载机制</h3>
+    <h2 class="serif">mtime 轮询 + SIGHUP 强重载，零重启更新</h2>
+    <div class="card">
+      <pre class="mermaid">
+flowchart LR
+  Y1["config.yaml"]:::cfg
+  Y2["server.yaml"]:::cfg
+  W["ConfigWatcher<br/>(util.py)"]:::core
+  M["每轮开头 stat() 两个文件"]:::core
+  CH{变了?}:::dec
+  R1["重建 Detector<br/>重建 Notifier<br/>重建 StateMachine"]:::core
+  R2["upsert_hosts()<br/>同步主机到 SQLite"]:::core
+  SIG["SIGHUP"]:::ext
+  FR["force=True<br/>无视 mtime 重读"]:::core
+
+  Y1 --> W
+  Y2 --> W
+  W --> M
+  M --> CH
+  CH -- config --> R1
+  CH -- servers --> R2
+  CH -- 两个都变 --> R1
+  CH -- 两个都变 --> R2
+  CH -- 没变 --> X[跳过]:::muted
+  SIG --> FR
+  FR --> R1
+  FR --> R2
+
+  classDef cfg    fill:#f1e3d3,stroke:#c97b3f,color:#14171e
+  classDef core   fill:#d6e7e0,stroke:#2f6f5e,color:#14171e
+  classDef dec    fill:#fbfaf6,stroke:#7c7a72,color:#14171e
+  classDef ext    fill:#fbfaf6,stroke:#7c7a72,color:#14171e,stroke-dasharray:4 3
+  classDef muted  fill:#f7f5f0,stroke:#e9e3d6,color:#7c7a72
+      </pre>
+    </div>
+    <p class="callout amber">
+      <strong>热加载范围</strong>：<code>interval</code>、阈值、<code>fping.*</code>、
+      <code>notify.channels</code>、<code>logging.level</code>、<code>server.yaml</code> 的
+      <code>hosts</code> 全部支持。唯独 <code>database</code> 路径不支持（连接在启动时建立）。
+    </p>
+  </section>
+
   <!-- 6. 文件清单 -->
   <section>
     <h3>06 · 源码清单</h3>
@@ -352,7 +397,7 @@ stateDiagram-v2
         <div class="file"><div class="n">notifier.py</div><div class="r">Notifier + DingTalkChannel + CuckooChannel 占位</div></div>
         <div class="file"><div class="n">database.py</div><div class="r">SQLite 封装，schema 自动应用，tags 编解码</div></div>
         <div class="file"><div class="n">models.py</div><div class="r">Host (含 tags) / Event / 枚举</div></div>
-        <div class="file"><div class="n">util.py</div><div class="r">YAML 加载、日志初始化、fping 输出解析</div></div>
+        <div class="file"><div class="n">util.py</div><div class="r">YAML 加载、日志、fping 解析、ConfigWatcher 热加载</div></div>
         <div class="file"><div class="n">config.yaml</div><div class="r">全局配置：interval / 阈值 / fping / 通知</div></div>
         <div class="file"><div class="n">server.yaml</div><div class="r">主机列表（name / ip / tags）</div></div>
         <div class="file"><div class="n">sql/schema.sql</div><div class="r">DDL：hosts（含 tags）、events 两张表</div></div>
@@ -408,6 +453,11 @@ stateDiagram-v2
           <td>扩展 <code>StateMachine._advance</code></td>
           <td>scheduler.py</td>
         </tr>
+        <tr>
+          <td>新增可热改字段</td>
+          <td>在 <code>run_daemon</code> 变更分支里读 <code>watcher.cfg</code> 并重建对应组件</td>
+          <td>monitor.py</td>
+        </tr>
       </tbody>
     </table>
     <p class="callout rose">
@@ -419,7 +469,7 @@ stateDiagram-v2
 
   <footer>
     <span>fping-monitor · docs/architecture.html</span>
-    <span>6 模块 · 2 表 · 13 文件 · 1 进程</span>
+    <span>6 模块 · 2 表 · 13 文件 · 1 进程 · 0 重启热更</span>
   </footer>
 </div>
 

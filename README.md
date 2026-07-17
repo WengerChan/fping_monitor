@@ -68,6 +68,43 @@ The container:
 - Persists `state.db` and `logs/` on the host so restarts don't lose history.
 - Restarts automatically unless you `make docker-down`.
 
+## Hot reload of config & host list
+
+**No restart needed** when you edit `server.yaml` or `config.yaml`. Two trigger modes:
+
+1. **Passive (default)**: each detection cycle checks the mtime of both YAML
+   files. If either changed, the watcher re-reads it and the next cycle uses
+   the new values.
+   - `server.yaml` changed → host list is upserted into SQLite immediately
+   - `config.yaml` changed → `FpingDetector` / `Notifier` / `StateMachine`
+     are rebuilt (new thresholds, new notification channels, new fping args
+     all take effect immediately)
+   - `interval` changed → the next sleep uses the new duration
+   - `logging.level` changed → the logger updates its level at once
+
+2. **Active**: send `SIGHUP` to the container to force an immediate reload
+   (no need to wait for the next cycle).
+
+```bash
+# Inside a container
+docker kill -s HUP fping-monitor
+
+# Bare process (dev mode)
+kill -HUP <pid>
+```
+
+Fields that hot-reload:
+
+| Field | Behaviour |
+|---|---|
+| `interval` | Next sleep uses the new value |
+| `failure_threshold` / `recovery_threshold` | State machine picks them up next cycle |
+| `fping.*` | `FpingDetector` is rebuilt |
+| `notify.channels` | `Notifier` is rebuilt (webhook URL, signature, @-mentions all hot) |
+| `logging.level` | Effective immediately |
+| `server.yaml` `hosts` | Upserted into SQLite at once |
+| `database` path | **Not** hot-reloadable (DB connection opens at startup) |
+
 ## State machine
 
 ```

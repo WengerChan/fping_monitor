@@ -66,6 +66,38 @@ docker compose logs -f monitor
 - `state.db` 和 `logs/` 持久化在宿主机，重启不丢历史
 - 异常退出自动重启（`restart: unless-stopped`），停止用 `make docker-down`
 
+## 配置热加载
+
+**修改 `server.yaml` / `config.yaml` 后无需重启容器**。两种触发方式：
+
+1. **被动（默认）**：每轮检测开头检查两个 YAML 的 mtime，变了就重读并在下一轮生效
+   - `server.yaml` 变更 → 立即把新主机列表同步进 SQLite
+   - `config.yaml` 变更 → 重建 `FpingDetector` / `Notifier` / `StateMachine`（新阈值、新通知渠道、新 fping 参数立刻生效）
+   - `interval` 变化 → 下一轮 sleep 时长按新值
+   - `logging.level` 变化 → logger 立即更新级别
+
+2. **主动**：发 `SIGHUP` 给容器，立刻强制 reload（不等下一轮）
+
+```bash
+# 容器里手动触发
+docker kill -s HUP fping-monitor
+
+# 主机进程（开发态）
+kill -HUP <pid>
+```
+
+完整支持热改的字段：
+
+| 字段 | 行为 |
+|---|---|
+| `interval` | 下一轮 sleep 用新值 |
+| `failure_threshold` / `recovery_threshold` | 新一轮状态机使用 |
+| `fping.*` | 重建 FpingDetector |
+| `notify.channels` | 重建 Notifier（包括 Webhook URL、加签密钥、@配置） |
+| `logging.level` | 立即生效 |
+| `server.yaml` 的 `hosts` | 立即 upsert 进 SQLite |
+| `database` 路径 | **不支持**（DB 连接在启动时建立，需重启） |
+
 ## 状态机
 
 ```
