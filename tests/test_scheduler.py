@@ -1,20 +1,30 @@
 """Scheduler + Detector integration tests with a fake detector."""
 from datetime import datetime
 
+from detector import DetectResult
 from models import EventType, HostStatus
 from notifier import Notifier
 from scheduler import Scheduler
 
 
 class FakeDetector:
-    """Returns whatever was queued for the next call."""
+    """按队列返回结果；空队列时全 True。"""
     def __init__(self, scenarios):
+        # scenarios 里每条是 dict[str, bool]，包成 DetectResult
         self._scenarios = list(scenarios)
 
     def detect(self, hosts):
         if not self._scenarios:
-            return {h.name: True for h in hosts}
-        return self._scenarios.pop(0)
+            alive = {h.name: True for h in hosts}
+            return DetectResult(alive=alive, attempted=len(hosts),
+                               reachable=len(hosts), duration_ms=0)
+        alive = self._scenarios.pop(0)
+        return DetectResult(
+            alive=alive,
+            attempted=len(hosts),
+            reachable=sum(1 for v in alive.values() if v),
+            duration_ms=10,
+        )
 
 
 class RecordingNotifier(Notifier):

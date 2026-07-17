@@ -148,9 +148,13 @@ class Scheduler:
             log.warning("没有配置主机，本轮跳过")
             return CycleResult(timestamp=datetime.utcnow(),
                                results={}, changes=[])
-        alive = self.detector.detect(hosts)
+        detect_result = self.detector.detect(hosts)
         # 检测结果单独打一条 JSON，方便按 host 在 ES 里检索
         log.info("检测结果",
                  extra={"event": "detection",
-                        "results": {h.name: alive.get(h.name) for h in hosts}})
-        return self.sm.step(alive)
+                        "fping_duration_ms": detect_result.duration_ms,
+                        "fping_returncode": detect_result.returncode,
+                        "attempted": detect_result.attempted,
+                        "reachable": detect_result.reachable,
+                        "results": detect_result.alive})
+        return self.sm.step(detect_result.alive)

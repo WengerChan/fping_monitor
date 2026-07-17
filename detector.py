@@ -7,13 +7,32 @@ from __future__ import annotations
 import logging
 import shutil
 import subprocess
-from dataclasses import dataclass
+import time
+from dataclasses import dataclass, field
 from typing import Dict, List
 
 from models import Host
 from util import parse_fping_output
 
 log = logging.getLogger("fping_monitor.detector")
+
+
+@dataclass
+class DetectResult:
+    """单次 fping 检测的结果汇总。
+
+    字段：
+        * ``alive``      — ``{name: bool}``：本轮是否可达
+        * ``duration_ms``— 整个 fping 调用耗时（包含 fork / select / 解析）
+        * ``returncode`` — fping 进程退出码（0=至少一台通；1=全不通；2=参数错）
+        * ``attempted``  — 探测的主机数
+        * ``reachable``  — 可达的主机数
+    """
+    alive: Dict[str, bool] = field(default_factory=dict)
+    duration_ms: int = 0
+    returncode: int = 0
+    attempted: int = 0
+    reachable: int = 0
 
 
 @dataclass
@@ -37,9 +56,19 @@ class FpingDetector:
                 "PATH 中找不到 fping，请先安装。"
             )
 
-    def detect(self, hosts: List[Host]) -> Dict[str, bool]:
+    def _subprocess_timeout_s(self) -> int:
+        """subprocess.run 等待 fping 结束的最长秒数。
+
+        fping 是并发检测（fork + select），不按主机数线性放大。
+        一轮时间上限 ≈ count × (timeout + interval) + 启动 overhead。
+        加 5s 缓冲防 edge case。
+        """
+        per_round_ms = self.count * (self.timeout_ms + self.interval_ms)
+        return max(10, per_round_ms // 1000 + 5)
+
+    def detect(self, hosts: List[Host]) -> DetectResult:
         if not hosts:
-            return {}
+            return DetectResult(alive={}, duration_ms=0, attempted=0, reachable=0)
 
         ips = [h.ip for h in hosts]
         cmd = [
@@ -53,17 +82,40 @@ class FpingDetector:
             *ips,
         ]
         log.debug("fping 命令：%s", " ".join(cmd))
-        # 超时时间 = (timeout * count + 100ms) * 主机数 / 1000 + 5s 缓冲
-        proc = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=max(10, (self.timeout_ms * self.count + 100) * max(1, len(ips)) // 1000 + 5),
-        )
+
+        started = time.monotonic()
+        try:
+            proc = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=self._subprocess_timeout_s(),
+            )
+        except subprocess.TimeoutExpired as e:
+            duration = int((time.monotonic() - started) * 1000)
+            log.error("fping 超时",
+                      extra={"event": "fping_timeout",
+                             "timeout_s": self._subprocess_timeout_s(),
+                             "duration_ms": duration,
+                             "hosts": len(hosts)})
+            # 超时视为全部不可达
+            return DetectResult(
+                alive={h.name: False for h in hosts},
+                duration_ms=duration,
+                returncode=-1,
+                attempted=len(hosts),
+                reachable=0,
+            )
+
+        duration_ms = int((time.monotonic() - started) * 1000)
         # 可达主机行在 stdout，不可达主机行在 stderr
         alive_rtt = parse_fping_output(proc.stdout or "", proc.stderr or "")
 
-        result: Dict[str, bool] = {}
-        for h in hosts:
-            result[h.name] = h.ip in alive_rtt
-        return result
+        alive = {h.name: h.ip in alive_rtt for h in hosts}
+        return DetectResult(
+            alive=alive,
+            duration_ms=duration_ms,
+            returncode=proc.returncode,
+            attempted=len(hosts),
+            reachable=sum(1 for v in alive.values() if v),
+        )
