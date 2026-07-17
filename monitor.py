@@ -142,9 +142,9 @@ def main(argv: Optional[list] = None) -> None:
         prog="fping_monitor",
         description="fping-monitor 长驻容器主程序，支持配置热加载。",
     )
-    parser.add_argument("--config", default="config.yaml",
+    parser.add_argument("--config", default="conf/config.yaml",
                         help="全局配置文件路径")
-    parser.add_argument("--servers", default="server.yaml",
+    parser.add_argument("--servers", default="conf/server.yaml",
                         help="主机列表文件路径")
     args = parser.parse_args(argv)
 

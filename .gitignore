@@ -18,6 +18,10 @@ state.db-shm
 logs/*.log
 logs/*.log.*
 
+# Local config overrides (tracked files are conf/config.yaml + conf/server.yaml only)
+conf/*.local.yaml
+conf/*.local.yml
+
 # Editor / OS
 .idea/
 .vscode/

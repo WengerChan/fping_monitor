@@ -448,6 +448,41 @@ web-10.1.2.14  10.1.2.14  [web, prod]
     </p>
   </section>
 
+  <!-- 5.9 配置目录约定 -->
+  <section>
+    <h3>05.9 · conf/ 目录约定</h3>
+    <h2 class="serif">所有 YAML 集中放一处，docker 单目录挂载</h2>
+<pre style="margin:0; font-family:'JetBrains Mono',monospace; font-size:12.5px; line-height:1.55; color:var(--ink); background:transparent; white-space:pre;">
+fping-monitor/
+├── conf/                   <span style="color:var(--muted)"># 单目录挂载，往里加 YAML 不用改 compose</span>
+│   ├── config.yaml         <span style="color:var(--muted)"># 跟踪版本：全局配置</span>
+│   ├── server.yaml         <span style="color:var(--muted)"># 跟踪版本：主机列表</span>
+│   ├── server-prod.yaml    <span style="color:var(--muted)"># 可选：按环境拆分（dev / staging / prod）</span>
+│   └── server.local.yaml   <span style="color:var(--muted)"># 可选：本地覆盖（.gitignore 已屏蔽）</span>
+├── state.db                <span style="color:var(--muted)"># bind mount，持久化</span>
+└── logs/                   <span style="color:var(--muted)"># bind mount，持久化</span>
+</pre>
+<pre style="margin-top:14px; font-family:'JetBrains Mono',monospace; font-size:12.5px; line-height:1.55; color:var(--ink); background:transparent; white-space:pre;">
+<span style="color:var(--muted)"># docker-compose.yml</span>
+volumes:
+  - ./conf:/app/conf:ro        <span style="color:var(--muted)"># 整个目录挂进去</span>
+  - ./state.db:/app/state.db
+  - ./logs:/app/logs
+
+<span style="color:var(--muted)"># 切换到不同环境</span>
+docker compose run --rm monitor --servers conf/server-prod.yaml
+
+<span style="color:var(--muted)"># 本地开发覆盖</span>
+cp conf/server.yaml conf/server.local.yaml
+<span style="color:var(--muted)"># 改 conf/server.local.yaml（git 不会看到）</span>
+</pre>
+    <p class="callout">
+      <strong>好处</strong>：新增环境、dev/prod 拆分、本地覆盖——都通过往 <code>conf/</code> 里加文件完成，
+      <code>docker-compose.yml</code> 和 Dockerfile 永远不用动。ConfigWatcher 也只跟踪 <code>--config</code> /
+      <code>--servers</code> 指定的文件，加新文件不会触发误重载。
+    </p>
+  </section>
+
   <!-- 6. 文件清单 -->
   <section>
     <h3>06 · 源码清单</h3>
@@ -461,11 +496,11 @@ web-10.1.2.14  10.1.2.14  [web, prod]
         <div class="file"><div class="n">database.py</div><div class="r">SQLite 封装 + tags 编解码 + IP 简写展开入库</div></div>
         <div class="file"><div class="n">models.py</div><div class="r">Host (含 tags) / Event / 枚举</div></div>
         <div class="file"><div class="n">util.py</div><div class="r">YAML 加载、日志、fping 解析、ConfigWatcher、IP 简写展开</div></div>
-        <div class="file"><div class="n">config.yaml</div><div class="r">全局配置：interval / 阈值 / fping / 通知</div></div>
-        <div class="file"><div class="n">server.yaml</div><div class="r">主机列表（name / ip / tags）</div></div>
+        <div class="file"><div class="n">conf/config.yaml</div><div class="r">全局配置：interval / 阈值 / fping / 通知</div></div>
+        <div class="file"><div class="n">conf/server.yaml</div><div class="r">主机列表（name / ip / tags）</div></div>
         <div class="file"><div class="n">sql/schema.sql</div><div class="r">DDL：hosts（含 tags）、events 两张表</div></div>
         <div class="file"><div class="n">Dockerfile</div><div class="r">python:3.11-slim + fping，CMD python monitor.py</div></div>
-        <div class="file"><div class="n">docker-compose.yml</div><div class="r">挂载 config/server/state.db/logs，env 注入 webhook</div></div>
+        <div class="file"><div class="n">docker-compose.yml</div><div class="r">单目录挂载 conf/、state.db、logs/，env 注入 webhook</div></div>
         <div class="file"><div class="n">Makefile</div><div class="r">install / test / docker / docker-up / docker-down / clean</div></div>
         <div class="file"><div class="n">README.md / README.cn.md</div><div class="r">中英两份使用说明</div></div>
       </div>

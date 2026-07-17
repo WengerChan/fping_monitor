@@ -33,16 +33,16 @@ SQLite + log volumes.
     ├── database.py         # SQLite layer, schema in sql/schema.sql
     ├── models.py           # Host (with tags), Event, HostStatus, EventType
     ├── util.py             # YAML loading, logging setup, fping parser
-    ├── config.yaml         # global config (interval, thresholds, fping, notify)
-    ├── server.yaml         # host list (name, ip, tags)
+    ├── conf/               # all config files in one place (single mount target)
+    │   ├── config.yaml     # global config (interval, thresholds, fping, notify)
+    │   └── server.yaml     # host list (name, ip, tags)
     ├── state.db            # SQLite database (created at runtime, mounted as volume)
     ├── sql/schema.sql      # DDL
     ├── logs/               # rotating logs (mounted as volume)
     ├── docs/architecture.html  # visual architecture overview
     ├── tests/              # pytest suite
     ├── Dockerfile
-    ├── docker-compose.yml
-    └── Makefile
+    └── docker-compose.yml
 
 ## Quick start (container)
 
@@ -53,8 +53,8 @@ make docker
 # 2. Set the DingTalk webhook (don't commit the secret)
 export DINGTALK_WEBHOOK="https://oapi.dingtalk.com/robot/send?access_token=..."
 
-# 3. Edit server.yaml to add the hosts you want to monitor
-cat server.yaml
+# 3. Edit conf/server.yaml to add the hosts you want to monitor
+cat conf/server.yaml
 
 # 4. Run as a long-lived container
 make docker-up
@@ -64,9 +64,16 @@ docker compose logs -f monitor
 ```
 
 The container:
-- Reads `config.yaml` and `server.yaml` from the project directory (mounted read-only).
+- Mounts the whole `./conf/` directory (read-only) — any file you add there
+  becomes accessible inside the container, no `docker-compose.yml` edits needed.
 - Persists `state.db` and `logs/` on the host so restarts don't lose history.
 - Restarts automatically unless you `make docker-down`.
+
+**Why a `conf/` directory instead of separate files?** When you add a new
+YAML (e.g. `conf/server-prod.yaml`, `conf/server-staging.yaml`, or a
+dev override `conf/server.local.yaml`), you can point `--servers` at it
+without touching the compose file. The whole directory is one bind mount
+on the host.
 
 ## Hot reload of config & host list
 

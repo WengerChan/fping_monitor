@@ -31,16 +31,16 @@
     ├── database.py         # SQLite 持久化层，DDL 在 sql/schema.sql
     ├── models.py           # Host（含 tags）/ Event / HostStatus / EventType
     ├── util.py             # YAML 加载、日志初始化、fping 输出解析
-    ├── config.yaml         # 全局配置（间隔、阈值、fping 参数、通知渠道）
-    ├── server.yaml         # 主机列表（name / ip / tags）
+    ├── conf/               # 配置文件集中放这里（单目录挂载）
+    │   ├── config.yaml     # 全局配置（间隔、阈值、fping 参数、通知渠道）
+    │   └── server.yaml     # 主机列表（name / ip / tags）
     ├── state.db            # SQLite 数据库（运行时创建，挂载为 volume）
     ├── sql/schema.sql      # 建表 DDL
     ├── logs/               # 按天滚动的日志（挂载为 volume）
     ├── docs/architecture.html  # 架构总览可视化页面
     ├── tests/              # pytest 测试集
     ├── Dockerfile
-    ├── docker-compose.yml
-    └── Makefile
+    └── docker-compose.yml
 
 ## 快速开始（容器）
 
@@ -51,8 +51,8 @@ make docker
 # 2. 设置钉钉 Webhook（密钥不要写进 YAML）
 export DINGTALK_WEBHOOK="https://oapi.dingtalk.com/robot/send?access_token=..."
 
-# 3. 编辑 server.yaml，填入要监控的主机
-cat server.yaml
+# 3. 编辑 conf/server.yaml，填入要监控的主机
+cat conf/server.yaml
 
 # 4. 启动长驻容器
 make docker-up
@@ -62,9 +62,14 @@ docker compose logs -f monitor
 ```
 
 容器行为：
-- 配置文件从宿主机目录挂载（只读）
+- 整个 `conf/` 目录挂载到容器（只读），往里加新 YAML 不需要改 compose
 - `state.db` 和 `logs/` 持久化在宿主机，重启不丢历史
 - 异常退出自动重启（`restart: unless-stopped`），停止用 `make docker-down`
+
+**为什么用 `conf/` 目录而不是散落的两个 yaml？** 以后想加新 yaml（按环境拆分：
+`conf/server-prod.yaml` / `conf/server-staging.yaml`，或者本地开发覆盖
+`conf/server.local.yaml`），只要 `--servers` 参数指过去就行，**compose 文件不用动**。
+整个目录就是宿主机上的一个 bind mount。
 
 ## 配置热加载
 
