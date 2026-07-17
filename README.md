@@ -207,6 +207,36 @@ The DingTalk alert body looks like:
 - 连续失败：3  连续成功：0
 ```
 
+## Bulk IP spec in `server.yaml`
+
+The `ip` field accepts several shorthand forms so you don't have to spell
+out every host one by one:
+
+| Syntax | Meaning | Expanded count |
+|---|---|---|
+| `"10.1.2.3"` | single IP | 1 |
+| `"10.1.2.0/24"` | CIDR (excludes net/broadcast) | 254 |
+| `"10.1.2.0/30"` | CIDR | 2 (drops .0 and .3) |
+| `"10.1.2.3-10.1.2.10"` | full range | 8 |
+| `"10.1.2.3-10"` | short range (end = last octet) | 8 |
+| `["8.8.8.8", "1.1.1.0/30"]` | list of mixed specs | 3 |
+
+When a spec expands to multiple IPs, **`name` is auto-suffixed with
+`-<ip>`** to keep rows unique:
+
+```yaml
+hosts:
+  - name: web
+    ip: 10.1.2.0/28
+    tags: [web, prod]
+```
+
+becomes `web-10.1.2.1` ... `web-10.1.2.14` (14 rows, tags propagated).
+
+**Safety rail**: a single spec may not expand to more than 1024 hosts
+(protects against accidental `0.0.0.0/0`). Violations abort the upsert
+without partial writes.
+
 ## Adding a new probe (TCP / HTTP / SSH)
 
 Implement the `Detector` protocol and inject it into `Scheduler`:

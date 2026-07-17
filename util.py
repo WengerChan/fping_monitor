@@ -1,6 +1,7 @@
-"""通用工具：YAML 加载、日志初始化、fping 输出解析、配置热加载监控。"""
+"""通用工具：YAML 加载、日志初始化、fping 输出解析、配置热加载监控、IP 简写展开。"""
 from __future__ import annotations
 
+import ipaddress
 import json
 import logging
 import os
@@ -8,7 +9,7 @@ import re
 from datetime import datetime, timezone
 from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import yaml
 
@@ -164,6 +165,108 @@ def parse_fping_output(stdout: str, stderr: str = "") -> Dict[str, float]:
         if m and m.group("ip") in alive:
             del alive[m.group("ip")]
     return alive
+
+
+# ---------------------------------------------------------------------------
+# IP 简写展开：支持单 IP / CIDR / 完整范围 / 短范围
+# ---------------------------------------------------------------------------
+
+# 单条 spec 最多展开多少个 host，防止 /0、/8 这种误操作把数据库撑爆
+MAX_HOSTS_PER_SPEC = 1024
+
+
+def expand_ip_spec(spec: str) -> List[str]:
+    """把 IP 简写展开为完整 IP 列表（按升序）。
+
+    支持的格式：
+        * 单 IP        ``10.1.2.3``
+        * CIDR         ``10.1.2.0/24``     排除 net/broadcast（/31、/32 例外）
+        * 完整范围     ``10.1.2.3-10.1.2.10``
+        * 短范围       ``10.1.2.3-10``     第二个值是 IP 最后一段数字
+
+    抛出 ``ValueError`` 的情况：空字符串、非法 IP、起始 > 结束、
+    展开数量超过 ``MAX_HOSTS_PER_SPEC``。
+    """
+    if not isinstance(spec, str):
+        raise ValueError(f"IP 简写必须是字符串，得到 {type(spec).__name__}")
+    spec = spec.strip()
+    if not spec:
+        raise ValueError("IP 简写不能为空")
+
+    if "/" in spec:
+        return _expand_cidr(spec)
+    if "-" in spec:
+        return _expand_range(spec)
+    # 单 IP
+    try:
+        ipaddress.IPv4Address(spec)
+    except ValueError as e:
+        raise ValueError(f"非法 IP '{spec}': {e}") from e
+    return [spec]
+
+
+def _expand_cidr(spec: str) -> List[str]:
+    """展开 CIDR。/32 保留 1 个；/31 保留 2 个；其他排除 net/broadcast。"""
+    try:
+        net = ipaddress.ip_network(spec, strict=False)
+    except ValueError as e:
+        raise ValueError(f"非法 CIDR '{spec}': {e}") from e
+    if not isinstance(net, ipaddress.IPv4Network):
+        raise ValueError(f"仅支持 IPv4 CIDR，不支持 '{spec}'")
+    if net.num_addresses > MAX_HOSTS_PER_SPEC:
+        raise ValueError(
+            f"CIDR {spec} 展开后有 {net.num_addresses} 个地址，"
+            f"超过单条上限 {MAX_HOSTS_PER_SPEC}"
+        )
+    if net.num_addresses == 1:
+        return [str(net.network_address)]
+    if net.num_addresses == 2:
+        return [str(net.network_address), str(net.broadcast_address)]
+    return [str(ip) for ip in net.hosts()]
+
+
+def _expand_range(spec: str) -> List[str]:
+    """展开 IP 范围，支持完整 IP-完整 IP 和 IP-数字 两种形式。"""
+    start_str, _, end_str = spec.partition("-")
+    start_str, end_str = start_str.strip(), end_str.strip()
+    if not start_str or not end_str:
+        raise ValueError(f"IP 范围格式不完整：'{spec}'")
+
+    try:
+        start_ip = ipaddress.IPv4Address(start_str)
+    except ValueError as e:
+        raise ValueError(f"非法起始 IP '{start_str}': {e}") from e
+
+    if "." in end_str:
+        # 完整 IP-完整 IP
+        try:
+            end_ip = ipaddress.IPv4Address(end_str)
+        except ValueError as e:
+            raise ValueError(f"非法结束 IP '{end_str}': {e}") from e
+    else:
+        # 短范围：end 是最后一段数字（0-255）
+        try:
+            end_last = int(end_str)
+        except ValueError as e:
+            raise ValueError(
+                f"范围结束 '{end_str}' 必须是 IP 最后一段数字或完整 IP: {e}"
+            ) from e
+        if not 0 <= end_last <= 255:
+            raise ValueError(f"范围结束值 {end_last} 超出 0-255")
+        # 把 start 的最后一段替换
+        octets = start_ip.exploded.split(".")
+        octets[3] = str(end_last)
+        end_ip = ipaddress.IPv4Address(".".join(octets))
+
+    if end_ip < start_ip:
+        raise ValueError(f"范围结束 {end_ip} 小于起始 {start_ip}")
+
+    count = int(end_ip) - int(start_ip) + 1
+    if count > MAX_HOSTS_PER_SPEC:
+        raise ValueError(
+            f"范围 {spec} 展开后有 {count} 个地址，超过单条上限 {MAX_HOSTS_PER_SPEC}"
+        )
+    return [str(ipaddress.IPv4Address(int(start_ip) + i)) for i in range(count)]
 
 
 # ---------------------------------------------------------------------------

@@ -1,14 +1,39 @@
 # 待监控主机列表
 # name: 唯一主机名（必填）
-# ip:   目标地址，IPv4 或域名（必填）
+# ip:   目标地址，支持以下简写形式（会自动展开为多台主机）：
+#         * 单 IP        "10.1.2.3"
+#         * CIDR         "10.1.2.0/24"      排除 net/broadcast
+#         * 完整范围     "10.1.2.3-10.1.2.10"
+#         * 短范围       "10.1.2.3-10"      第二个值是 IP 最后一段
+#         * list 形式    ["10.1.2.3", "10.1.2.0/28"]   混合多个 spec
+#       展开成多台主机时，name 会自动追加 "-<ip>" 后缀保证唯一
 # tags: 业务标签，告警时会一起展示，方便快速定位（可选）
+#
+# 单条 spec 最多展开 1024 个主机，超过会报错（防止 /0、/8 这类误操作）
 hosts:
+  # 单 IP
   - name: gateway
     ip: 192.168.1.1
     tags: [network, infra]
-  - name: dns-google
-    ip: 8.8.8.8
-    tags: [network, external]
-  - name: dns-cloudflare
-    ip: 1.1.1.1
-    tags: [network, external]
+
+  # CIDR 展开：/28 = 14 个可用 IP，自动命名为 web-10.1.2.1 ... web-10.1.2.14
+  - name: web
+    ip: 10.1.2.0/28
+    tags: [web, prod]
+
+  # 短范围：10.1.3.3 到 10.1.3.10 共 8 台
+  - name: db
+    ip: 10.1.3.3-10
+    tags: [db, prod]
+
+  # 完整范围
+  - name: cache
+    ip: 10.1.4.5-10.1.4.8
+    tags: [cache, prod]
+
+  # list 形式：混合多种 spec
+  - name: misc
+    ip:
+      - 8.8.8.8
+      - 1.1.1.0/30
+    tags: [external]

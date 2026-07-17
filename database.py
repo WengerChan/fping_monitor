@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Iterable, List, Optional
 
 from models import Event, EventType, Host, HostStatus
+from util import expand_ip_spec
 
 log = logging.getLogger("fping_monitor.db")
 
@@ -61,15 +62,46 @@ class Database:
     def upsert_hosts(self, hosts: Iterable[dict]) -> None:
         """批量写入主机。已存在则更新 IP 和 tags，不删除 YAML 中已移除的主机（删除是显式操作）。
 
+        ``ip`` 字段支持简写：单 IP、CIDR、完整范围、短范围。展开成多个主机时，
+        自动把 ``name`` 拼上 IP 作为后缀保证唯一性。
+
         每条 host 字典支持字段：
-            * ``name`` (必填) — 主机名
-            * ``ip``   (必填) — IP 或域名
+            * ``name`` (必填) — 主机名；展开多 IP 时会自动追加 ``-IP`` 后缀
+            * ``ip``   (必填) — 单个 IP / CIDR / 范围，也支持 list 形式混合多个 spec
             * ``tags`` (可选) — list[str]，会序列化为逗号分隔字符串
+
+        示例：
+            ``{"name": "web", "ip": "10.1.2.3-10"}`` → 8 条主机，name 为
+            ``web-10.1.2.3`` ... ``web-10.1.2.10``
         """
-        rows = [
-            (h["name"], h["ip"], _encode_tags(h.get("tags") or []))
-            for h in hosts
-        ]
+        rows: list[tuple[str, str, str]] = []
+        for h in hosts:
+            name = h.get("name")
+            if not name:
+                raise ValueError("host 缺少必填字段 name")
+            tags = _encode_tags(h.get("tags") or [])
+            ip_field = h.get("ip")
+            if ip_field is None or ip_field == "":
+                raise ValueError(f"host {name!r} 缺少必填字段 ip")
+
+            # 支持 list 形式：每条 spec 单独展开
+            if isinstance(ip_field, list):
+                specs = [str(s) for s in ip_field]
+            else:
+                specs = [str(ip_field)]
+
+            expanded: list[str] = []
+            for s in specs:
+                expanded.extend(expand_ip_spec(s))
+
+            if not expanded:
+                continue
+            if len(expanded) == 1:
+                rows.append((name, expanded[0], tags))
+            else:
+                for ip in expanded:
+                    rows.append((f"{name}-{ip}", ip, tags))
+
         if not rows:
             return
         with self._connect() as conn:

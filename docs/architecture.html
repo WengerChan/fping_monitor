@@ -412,6 +412,42 @@ flowchart LR
     </p>
   </section>
 
+  <!-- 5.7 IP 简写展开 -->
+  <section>
+    <h3>05.7 · IP 简写批量展开</h3>
+    <h2 class="serif">一段配置自动展开成多台主机，<code>name</code> 加 <code>-IP</code> 后缀</h2>
+    <table>
+      <thead>
+        <tr><th style="width:32%">写法</th><th>含义</th><th>展开数</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>10.1.2.3</code></td><td>单 IP</td><td>1</td></tr>
+        <tr><td><code>10.1.2.0/24</code></td><td>CIDR（剔除 net/broadcast）</td><td>254</td></tr>
+        <tr><td><code>10.1.2.0/30</code></td><td>CIDR 短前缀</td><td>2</td></tr>
+        <tr><td><code>10.1.2.3-10.1.2.10</code></td><td>完整范围</td><td>8</td></tr>
+        <tr><td><code>10.1.2.3-10</code></td><td>短范围（end = 最后一段）</td><td>8</td></tr>
+        <tr><td><code>["8.8.8.8", "1.1.1.0/30"]</code></td><td>list 形式混合</td><td>3</td></tr>
+      </tbody>
+    </table>
+<pre style="margin-top:14px; font-family:'JetBrains Mono',monospace; font-size:12.5px; line-height:1.55; color:var(--ink); background:transparent; white-space:pre-wrap;">
+<span style="color:var(--muted)"># server.yaml</span>
+hosts:
+  - name: web
+    ip: 10.1.2.0/28       <span style="color:var(--muted)"># 自动展开为 14 台</span>
+    tags: [web, prod]
+
+<span style="color:var(--muted)"># 入库后</span>
+web-10.1.2.1   10.1.2.1   [web, prod]
+web-10.1.2.2   10.1.2.2   [web, prod]
+...
+web-10.1.2.14  10.1.2.14  [web, prod]
+</pre>
+    <p class="callout">
+      <strong>安全护栏</strong>：单条 spec 最多展开 1024 个主机（防 <code>0.0.0.0/0</code> 这类误操作）。
+      展开发生在 <code>Database.upsert_hosts</code>，整批事务化，校验失败不会半写入。
+    </p>
+  </section>
+
   <!-- 6. 文件清单 -->
   <section>
     <h3>06 · 源码清单</h3>
@@ -422,9 +458,9 @@ flowchart LR
         <div class="file"><div class="n">scheduler.py</div><div class="r">Scheduler.run_once + StateMachine 纯函数</div></div>
         <div class="file"><div class="n">detector.py</div><div class="r">Detector 协议 + FpingDetector 实现</div></div>
         <div class="file"><div class="n">notifier.py</div><div class="r">Notifier + DingTalkChannel + CuckooChannel 占位</div></div>
-        <div class="file"><div class="n">database.py</div><div class="r">SQLite 封装，schema 自动应用，tags 编解码</div></div>
+        <div class="file"><div class="n">database.py</div><div class="r">SQLite 封装 + tags 编解码 + IP 简写展开入库</div></div>
         <div class="file"><div class="n">models.py</div><div class="r">Host (含 tags) / Event / 枚举</div></div>
-        <div class="file"><div class="n">util.py</div><div class="r">YAML 加载、日志、fping 解析、ConfigWatcher 热加载</div></div>
+        <div class="file"><div class="n">util.py</div><div class="r">YAML 加载、日志、fping 解析、ConfigWatcher、IP 简写展开</div></div>
         <div class="file"><div class="n">config.yaml</div><div class="r">全局配置：interval / 阈值 / fping / 通知</div></div>
         <div class="file"><div class="n">server.yaml</div><div class="r">主机列表（name / ip / tags）</div></div>
         <div class="file"><div class="n">sql/schema.sql</div><div class="r">DDL：hosts（含 tags）、events 两张表</div></div>
