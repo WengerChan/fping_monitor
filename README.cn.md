@@ -98,6 +98,74 @@ kill -HUP <pid>
 | `server.yaml` 的 `hosts` | 立即 upsert 进 SQLite |
 | `database` 路径 | **不支持**（DB 连接在启动时建立，需重启） |
 
+## 日志格式（Logstash / ELK 接入）
+
+每条日志都是**单行 JSON**，logstash 用 `codec => json_lines` 可直接消费，
+不用 grok 模式。默认 `config.yaml` 里 `logging.format: json` 已开启。
+
+**示例输出**（`logs/fping_monitor.log`）：
+
+```json
+{"ts":"2026-07-17T09:16:51.772580+00:00","level":"INFO","logger":"fping_monitor","message":"收到 SIGHUP，强制重载配置","signal":"SIGHUP"}
+{"ts":"2026-07-17T09:16:51.772889+00:00","level":"INFO","logger":"fping_monitor","message":"检测结果","event":"detection","results":{"gw":true,"dns8":false}}
+{"ts":"2026-07-17T09:16:51.772939+00:00","level":"INFO","logger":"fping_monitor","message":"状态变更","event":"state_change","host":"gw","ip":"192.168.1.1","tags":["network","infra"],"from_status":"UP","to_status":"DOWN","fired_kind":"DOWN"}
+```
+
+固定字段：`ts`（UTC ISO 8601）/ `level` / `logger` / `message`
+透传字段：业务代码通过 `log.info(..., extra={"k": "v"})` 传入，会作为同级 JSON 字段输出
+
+**Logstash pipeline 最小配置**：
+
+```ruby
+input {
+  file {
+    path => "/var/log/fping-monitor/*.log"
+    start_position => "beginning"
+    sincedb_path => "/var/lib/logstash/sincedb_fping"
+    codec => "json_lines"     # ← 关键：每行直接当 JSON 解析
+  }
+}
+
+filter {
+  # 1. 业务事件分类
+  if [event] == "state_change" {
+    mutate { add_tag => ["fping_state_change"] }
+  }
+  # 2. 错误级别立即告警
+  if [level] == "ERROR" {
+    mutate { add_tag => ["alert"] }
+  }
+  # 3. ts 转 @timestamp 让 ES 用
+  date {
+    match => ["ts", "ISO8601"]
+    target => "@timestamp"
+  }
+}
+
+output {
+  elasticsearch {
+    hosts => ["http://es:9200"]
+    index => "fping-monitor-%{+YYYY.MM.dd}"
+  }
+}
+```
+
+**关键业务字段速查**（可在 Kibana 里做可视化/告警）：
+
+| 字段 | 类型 | 触发时机 | 用途 |
+|---|---|---|---|
+| `event="detection"` | object | 每轮检测 | 看 `results.{host_name}` 知道每台是否可达 |
+| `event="state_change"` | object | 状态机跃迁时 | `host` + `from_status` + `to_status` 索引 |
+| `host` | keyword | 同上 | 主机名（已建索引） |
+| `tags` | keyword[] | 同上 | 业务标签数组 |
+| `channel` | keyword | 通知失败时 | 哪个渠道出了问题 |
+| `errcode` / `errmsg` | keyword/int | 钉钉业务错误 | 排查 Webhook 失败原因 |
+| `cycle_changes` | int | 每轮完成 | 一周期内跃迁数（>0 触发关注） |
+| `hosts` | int | server.yaml 变更 | 新增/同步的主机数 |
+| `signal` | keyword | 收到信号 | SIGHUP / SIGTERM 等 |
+
+如需本地开发时看人类可读文本，把 `config.yaml` 改成 `logging.format: text`（修改后下一轮会重建 handler，立即生效）。
+
 ## 状态机
 
 ```

@@ -1,9 +1,11 @@
 """通用工具：YAML 加载、日志初始化、fping 输出解析、配置热加载监控。"""
 from __future__ import annotations
 
+import json
 import logging
 import os
 import re
+from datetime import datetime, timezone
 from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -20,28 +22,88 @@ def load_yaml(path: str | os.PathLike) -> Dict[str, Any]:
     return data
 
 
+# ---------------------------------------------------------------------------
+# 日志格式化
+# ---------------------------------------------------------------------------
+
+# logging.LogRecord 的内置属性，extra={} 字段不应与之冲突
+_LOGRECORD_RESERVED = frozenset({
+    "name", "msg", "args", "levelname", "levelno", "pathname", "filename",
+    "module", "exc_info", "exc_text", "stack_info", "lineno", "funcName",
+    "created", "msecs", "relativeCreated", "thread", "threadName",
+    "processName", "process", "message", "asctime", "taskName",
+})
+
+
+class JsonFormatter(logging.Formatter):
+    """每条日志输出单行 JSON，logstash ``codec => json_lines`` 可直接消费。
+
+    固定字段：
+        * ``ts`` — UTC ISO 8601，带微秒
+        * ``level`` — INFO / WARNING / ERROR …
+        * ``logger`` — 子 logger 名（如 ``fping_monitor.scheduler``）
+        * ``message`` — 已 format 的消息体
+
+    透传字段：``log.info("...", extra={"k": v})`` 中的 ``k=v`` 会作为同级 JSON 字段输出。
+    异常：``exc_info`` 字段会包含完整 traceback 文本。
+    """
+
+    def format(self, record: logging.LogRecord) -> str:
+        ts = datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat()
+        payload: Dict[str, Any] = {
+            "ts": ts,
+            "level": record.levelname,
+            "logger": record.name,
+            "message": record.getMessage(),
+        }
+        # 把 extra 字段合并进来（用户通过 log.info(..., extra=...) 传入）
+        for k, v in record.__dict__.items():
+            if k in _LOGRECORD_RESERVED or k.startswith("_"):
+                continue
+            payload[k] = v
+        if record.exc_info:
+            payload["exc_info"] = self.formatException(record.exc_info)
+        if record.stack_info:
+            payload["stack_info"] = record.stack_info
+        # default=str 让 datetime / Path / Enum 等也能序列化
+        return json.dumps(payload, ensure_ascii=False, default=str)
+
+
+class TextFormatter(logging.Formatter):
+    """人类可读的纯文本格式，本地开发时用。"""
+    DEFAULT = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+    DATEFMT = "%Y-%m-%d %H:%M:%S"
+
+    def __init__(self) -> None:
+        super().__init__(fmt=self.DEFAULT, datefmt=self.DATEFMT)
+
+
 def setup_logging(level: str = "INFO", log_dir: str = "logs",
-                  backup_days: int = 14) -> logging.Logger:
-    """初始化全局 logger，可重复调用以更新 level。
+                  backup_days: int = 14,
+                  fmt: str = "json") -> logging.Logger:
+    """初始化全局 logger，支持 JSON / TEXT 两种格式。
 
     行为：
-        * 输出到控制台 + 按天滚动的日志文件（logs/fping_monitor.log）
-        * 日志文件名后缀为日期，保留 ``backup_days`` 天的历史
-        * handler 不会重复挂载；level 每次都会更新（支持热改）
+        * 每次调用都重建 handler（保证 ``fmt`` 变更能立刻生效；旧 handler 会先 close）
+        * level 每次都更新
+        * 写到 ``logs/fping_monitor.log``（按天滚动，保留 ``backup_days`` 天）
+        * 同时输出到 stderr
+        * ``logger.propagate = False`` 避免重复输出
     """
     logger = logging.getLogger("fping_monitor")
-    # 总是更新 level，让配置热改 YAML 后能立刻生效
     logger.setLevel(getattr(logging, level.upper(), logging.INFO))
     logger.propagate = False
 
-    if logger.handlers:
-        return logger
+    # 重建 handler：让 format 变化能立即生效（之前挂的可能不是同一种 Formatter）
+    for h in list(logger.handlers):
+        try:
+            h.close()
+        except Exception:                              # noqa: BLE001
+            pass
+        logger.removeHandler(h)
 
     Path(log_dir).mkdir(parents=True, exist_ok=True)
-    fmt = logging.Formatter(
-        "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
+    formatter = JsonFormatter() if fmt == "json" else TextFormatter()
 
     file_handler = TimedRotatingFileHandler(
         filename=os.path.join(log_dir, "fping_monitor.log"),
@@ -51,12 +113,12 @@ def setup_logging(level: str = "INFO", log_dir: str = "logs",
         encoding="utf-8",
         utc=False,
     )
-    file_handler.setFormatter(fmt)
+    file_handler.setFormatter(formatter)
     file_handler.suffix = "%Y-%m-%d"
     logger.addHandler(file_handler)
 
     stream_handler = logging.StreamHandler()
-    stream_handler.setFormatter(fmt)
+    stream_handler.setFormatter(formatter)
     logger.addHandler(stream_handler)
 
     return logger

@@ -56,12 +56,13 @@ def build_scheduler(cfg: dict, db: Database) -> Tuple[Scheduler, Notifier, Detec
 
 
 def init_logging_from_cfg(cfg: dict) -> None:
-    """根据 cfg 重新初始化 logging（幂等：handler 不重复挂载，level 始终更新）。"""
+    """根据 cfg 重新初始化 logging（重建 handler 让 format 变化也能立即生效）。"""
     logging_cfg = cfg.get("logging", {}) or {}
     setup_logging(
         level=logging_cfg.get("level", "INFO"),
         log_dir=logging_cfg.get("dir", "logs"),
         backup_days=int(logging_cfg.get("backup_days", 14)),
+        fmt=logging_cfg.get("format", "json"),
     )
 
 
@@ -83,11 +84,12 @@ def run_daemon(config_path: str, servers_path: str) -> None:
     # 信号处理：SIGHUP 触发立即重载，SIGINT/SIGTERM 优雅退出
     stop = {"flag": False}
 
-    def _reload_now(*_):
-        log.info("收到 SIGHUP，强制重载配置")
+    def _reload_now(sig, frame):
+        log.info("收到 SIGHUP，强制重载配置", extra={"signal": "SIGHUP"})
         watcher.reload(force=True)
-    def _stop(*_):
-        log.info("收到停止信号，本周期结束后退出")
+    def _stop(sig, frame):
+        log.info("收到停止信号，本周期结束后退出",
+                 extra={"signal": signal.Signals(sig).name})
         stop["flag"] = True
 
     signal.signal(signal.SIGINT, _stop)
@@ -98,18 +100,22 @@ def run_daemon(config_path: str, servers_path: str) -> None:
         # 1) 检查配置变更
         changed = watcher.reload()
         if changed in ("config", "all"):
-            log.info("config.yaml 变更，重建检测器/通知器/状态机")
+            log.info("config.yaml 变更，重建检测器/通知器/状态机",
+                     extra={"changed": "config"})
             init_logging_from_cfg(watcher.cfg)
             scheduler, notifier, _ = build_scheduler(watcher.cfg, db)
         if changed in ("servers", "all"):
             hosts = watcher.server_cfg.get("hosts", []) or []
-            log.info("server.yaml 变更，同步 %d 台主机", len(hosts))
+            log.info("server.yaml 变更，同步主机",
+                     extra={"changed": "servers", "hosts": len(hosts)})
             db.upsert_hosts(hosts)
 
         # 2) 跑一轮检测
         try:
             res = scheduler.run_once()
-            log.info("本周期完成：%d 个状态变更", len(res.changes))
+            log.info("本周期完成",
+                     extra={"cycle_changes": len(res.changes),
+                            "alive_count": sum(1 for v in res.results.values() if v)})
         except Exception:                          # noqa: BLE001
             log.exception("本周期执行失败")
 
@@ -122,7 +128,7 @@ def run_daemon(config_path: str, servers_path: str) -> None:
                 break
             time.sleep(1)
 
-    log.info("常驻进程已退出")
+    log.info("常驻进程已退出", extra={"reason": "signal"})
 
 
 # ---------------------------------------------------------------------------

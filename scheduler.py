@@ -82,8 +82,14 @@ class StateMachine:
                     "from": old_status.value,
                     "to": new_status.value,
                 })
-                log.info("状态变更 %s: %s -> %s",
-                         host.name, old_status.value, new_status.value)
+                log.info("状态变更",
+                         extra={"event": "state_change",
+                                "host": host.name,
+                                "ip": host.ip,
+                                "tags": list(host.tags),
+                                "from_status": old_status.value,
+                                "to_status": new_status.value,
+                                "fired_kind": kind.value})
         return CycleResult(timestamp=now, results=alive, changes=changes)
 
     def _advance(self, host: Host, is_alive: bool, now: datetime
@@ -146,6 +152,8 @@ class Scheduler:
             return CycleResult(timestamp=datetime.utcnow(),
                                results={}, changes=[])
         alive = self.detector.detect(hosts)
-        log.info("检测结果：%s",
-                 {h.name: alive.get(h.name) for h in hosts})
+        # 检测结果单独打一条 JSON，方便按 host 在 ES 里检索
+        log.info("检测结果",
+                 extra={"event": "detection",
+                        "results": {h.name: alive.get(h.name) for h in hosts}})
         return self.sm.step(alive)

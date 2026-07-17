@@ -88,7 +88,10 @@ class DingTalkChannel:
         try:
             r = requests.post(self._endpoint(), json=payload, timeout=self.timeout)
             if r.status_code != 200:
-                log.error("DingTalk POST 失败：%s %s", r.status_code, r.text[:200])
+                log.error("DingTalk POST 失败",
+                          extra={"channel": "dingtalk",
+                                 "status_code": r.status_code,
+                                 "response": r.text[:200]})
                 return
             # 钉钉返回 {"errcode":0,"errmsg":"ok"}；非 0 视作业务失败
             try:
@@ -96,9 +99,13 @@ class DingTalkChannel:
             except ValueError:
                 return
             if body.get("errcode", 0) != 0:
-                log.error("DingTalk 业务错误：%s", body)
+                log.error("DingTalk 业务错误",
+                          extra={"channel": "dingtalk",
+                                 "errcode": body.get("errcode"),
+                                 "errmsg": body.get("errmsg")})
         except requests.RequestException as e:
-            log.error("DingTalk POST 异常：%s", e)
+            log.error("DingTalk POST 异常",
+                      extra={"channel": "dingtalk", "error": str(e)})
 
     def _build(self, host: Host, kind: str) -> dict:
         """组装 markdown 消息体。"""
@@ -187,14 +194,16 @@ class Notifier:
             ctype = entry.get("type")
             cls_ = _CHANNELS.get(ctype)
             if cls_ is None:
-                log.warning("未知的通知渠道类型：%s", ctype)
+                log.warning("未知的通知渠道类型", extra={"channel": ctype})
                 continue
             try:
                 channels.append(cls_(**{k: v for k, v in entry.items() if k != "type"}))
             except NotImplementedError as e:
-                log.warning("跳过未实现的渠道 %s：%s", ctype, e)
+                log.warning("跳过未实现的渠道",
+                            extra={"channel": ctype, "reason": str(e)})
             except TypeError as e:
-                log.error("渠道 %s 配置非法：%s", ctype, e)
+                log.error("渠道配置非法",
+                          extra={"channel": ctype, "error": str(e)})
         return cls(channels=channels)
 
     def notify_down(self, host: Host) -> None:
@@ -202,11 +211,15 @@ class Notifier:
             try:
                 ch.notify_down(host)
             except Exception as e:                       # noqa: BLE001
-                log.exception("通过 %s 发送 DOWN 失败：%s", ch.name, e)
+                log.exception("通过渠道发送 DOWN 失败",
+                              extra={"channel": ch.name, "host": host.name,
+                                     "error": str(e)})
 
     def notify_recover(self, host: Host) -> None:
         for ch in self.channels:
             try:
                 ch.notify_recover(host)
             except Exception as e:                       # noqa: BLE001
-                log.exception("通过 %s 发送 RECOVER 失败：%s", ch.name, e)
+                log.exception("通过渠道发送 RECOVER 失败",
+                              extra={"channel": ch.name, "host": host.name,
+                                     "error": str(e)})

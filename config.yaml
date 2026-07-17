@@ -18,6 +18,7 @@ logging:
   level: INFO                 # DEBUG / INFO / WARNING / ERROR
   dir: logs
   backup_days: 14
+  format: json                # json（logstash json_lines）/ text（人类可读）
 
 notify:
   enabled: true

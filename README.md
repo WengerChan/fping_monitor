@@ -105,6 +105,72 @@ Fields that hot-reload:
 | `server.yaml` `hosts` | Upserted into SQLite at once |
 | `database` path | **Not** hot-reloadable (DB connection opens at startup) |
 
+## Logging (Logstash / ELK)
+
+Every log line is **single-line JSON**, so Logstash can consume it with
+`codec => json_lines` — no grok patterns required. `logging.format: json`
+is the default in `config.yaml`.
+
+**Sample output** (`logs/fping_monitor.log`):
+
+```json
+{"ts":"2026-07-17T09:16:51.772580+00:00","level":"INFO","logger":"fping_monitor","message":"收到 SIGHUP，强制重载配置","signal":"SIGHUP"}
+{"ts":"2026-07-17T09:16:51.772889+00:00","level":"INFO","logger":"fping_monitor","message":"检测结果","event":"detection","results":{"gw":true,"dns8":false}}
+{"ts":"2026-07-17T09:16:51.772939+00:00","level":"INFO","logger":"fping_monitor","message":"状态变更","event":"state_change","host":"gw","ip":"192.168.1.1","tags":["network","infra"],"from_status":"UP","to_status":"DOWN","fired_kind":"DOWN"}
+```
+
+Fixed fields: `ts` (UTC ISO 8601) / `level` / `logger` / `message`
+Custom fields: anything passed via `log.info(..., extra={"k": "v"})` becomes
+a top-level JSON field.
+
+**Minimal Logstash pipeline**:
+
+```ruby
+input {
+  file {
+    path => "/var/log/fping-monitor/*.log"
+    start_position => "beginning"
+    sincedb_path => "/var/lib/logstash/sincedb_fping"
+    codec => "json_lines"
+  }
+}
+
+filter {
+  if [event] == "state_change" { mutate { add_tag => ["fping_state_change"] } }
+  if [level] == "ERROR"       { mutate { add_tag => ["alert"] } }
+
+  date {
+    match  => ["ts", "ISO8601"]
+    target => "@timestamp"
+  }
+}
+
+output {
+  elasticsearch {
+    hosts => ["http://es:9200"]
+    index => "fping-monitor-%{+YYYY.MM.dd}"
+  }
+}
+```
+
+**Useful business fields for Kibana dashboards / alerts**:
+
+| Field | Type | When | Use |
+|---|---|---|---|
+| `event="detection"` | object | every cycle | `results.<host_name>` is bool per host |
+| `event="state_change"` | object | on state transitions | `host` + `from_status` + `to_status` |
+| `host` | keyword | same | host name (indexed) |
+| `tags` | keyword[] | same | business tag array (filterable) |
+| `channel` | keyword | notify failure | which channel had the problem |
+| `errcode` / `errmsg` | keyword/int | DingTalk business error | debug webhook failures |
+| `cycle_changes` | int | every cycle | transitions this cycle (>0 = worth a look) |
+| `hosts` | int | server.yaml change | number of hosts synced |
+| `signal` | keyword | on signal | SIGHUP / SIGTERM etc. |
+
+To get a human-readable text format for local dev, set
+`logging.format: text` in `config.yaml` — the change takes effect on the
+next cycle (handler is rebuilt).
+
 ## State machine
 
 ```

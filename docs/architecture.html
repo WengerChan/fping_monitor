@@ -318,6 +318,33 @@ stateDiagram-v2
     </p>
   </section>
 
+  <!-- 4.5 日志输出格式 -->
+  <section>
+    <h3>04.5 · 日志输出（Logstash 友好）</h3>
+    <h2 class="serif">每行 JSON，<code>codec =&gt; json_lines</code> 直送 ES</h2>
+    <div class="card">
+<pre style="margin:0; font-family:'JetBrains Mono',monospace; font-size:12.5px; line-height:1.55; color:var(--ink); background:transparent; white-space:pre-wrap;">
+<span style="color:var(--muted)">// 收到 SIGHUP 信号</span>
+{"ts":"2026-07-17T09:16:51+00:00","level":"INFO","logger":"fping_monitor","message":"收到 SIGHUP，强制重载配置","signal":"SIGHUP"}
+
+<span style="color:var(--muted)">// 每轮检测结果</span>
+{"ts":"2026-07-17T09:16:51+00:00","level":"INFO","logger":"fping_monitor","message":"检测结果","event":"detection","results":{"gw":true,"dns8":false}}
+
+<span style="color:var(--muted)">// 状态机跃迁</span>
+{"ts":"2026-07-17T09:16:51+00:00","level":"INFO","logger":"fping_monitor","message":"状态变更","event":"state_change","host":"gw","ip":"192.168.1.1","tags":["network","infra"],"from_status":"UP","to_status":"DOWN","fired_kind":"DOWN"}
+
+<span style="color:var(--muted)">// 通知渠道失败</span>
+{"ts":"2026-07-17T09:16:52+00:00","level":"ERROR","logger":"fping_monitor","message":"DingTalk 业务错误","channel":"dingtalk","errcode":310000,"errmsg":"bad token"}
+</pre>
+    </div>
+    <p class="callout">
+      固定字段 <code>ts / level / logger / message</code>，业务字段通过
+      <code>log.info(..., extra={"k":"v"})</code> 注入，<code>exc_info</code>
+      自动收 traceback。开发时把 <code>config.yaml</code> 改成
+      <code>logging.format: text</code> 看人类可读文本。
+    </p>
+  </section>
+
   <!-- 5. 数据模型 -->
   <section>
     <h3>05 · 数据模型</h3>
