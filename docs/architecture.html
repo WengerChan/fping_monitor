@@ -17,14 +17,13 @@
     --ink: #14171e;
     --ink-2: #3a4256;
     --muted: #7c7a72;
-    --primary: #2f6f5e;     /* 墨绿 */
+    --primary: #2f6f5e;
     --primary-soft: #d6e7e0;
-    --accent: #c97b3f;      /* 焦糖 */
+    --accent: #c97b3f;
     --accent-soft: #f1e3d3;
     --rose: #b06367;
     --rose-soft: #efdede;
   }
-
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; }
   body {
@@ -34,256 +33,198 @@
     font-size: 15px;
     line-height: 1.6;
     -webkit-font-smoothing: antialiased;
-    /* 两个角落的极淡径向渐变 */
     background-image:
       radial-gradient(circle at 8% 0%, rgba(47,111,94,.05), transparent 40%),
       radial-gradient(circle at 92% 100%, rgba(201,123,63,.05), transparent 40%);
     background-attachment: fixed;
   }
 
-  /* ---------- 排版 ---------- */
-  .wrap { max-width: 1080px; margin: 0 auto; padding: 64px 28px 96px; }
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 56px 28px 80px; }
   h1.serif {
-    font-family: 'DM Serif Display', serif;
-    font-weight: 400;
-    font-size: 36px;
-    letter-spacing: -.01em;
-    line-height: 1.15;
-    margin: 0 0 12px;
+    font-family: 'DM Serif Display', serif; font-weight: 400;
+    font-size: 32px; letter-spacing: -.01em; line-height: 1.15; margin: 0 0 10px;
   }
   h2.serif {
-    font-family: 'DM Serif Display', serif;
-    font-weight: 400;
-    font-size: 24px;
-    letter-spacing: -.005em;
-    margin: 0 0 14px;
-    color: var(--ink);
+    font-family: 'DM Serif Display', serif; font-weight: 400;
+    font-size: 22px; letter-spacing: -.005em; margin: 0 0 12px; color: var(--ink);
   }
   h3 {
-    font-family: 'Outfit', sans-serif;
-    font-size: 14px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: .12em;
-    color: var(--muted);
-    margin: 0 0 18px;
+    font-family: 'Outfit', sans-serif; font-size: 13px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: .12em; color: var(--muted);
+    margin: 0 0 14px;
   }
-  p { margin: 0 0 12px; color: var(--ink-2); }
+  p { margin: 0 0 10px; color: var(--ink-2); }
   code, .mono { font-family: 'JetBrains Mono', monospace; font-size: 13px; }
   code { background: var(--line-soft); padding: 1px 6px; border-radius: 4px; color: var(--ink); }
 
-  /* ---------- Hero ---------- */
-  .hero { display: grid; gap: 28px; margin-bottom: 72px; }
+  /* Hero */
+  .hero { margin-bottom: 56px; }
   .eyebrow {
     display: inline-flex; align-items: center; gap: 8px;
     font-size: 12px; font-weight: 600; letter-spacing: .12em;
     text-transform: uppercase; color: var(--primary);
   }
   .eyebrow::before { content: ""; width: 18px; height: 1px; background: var(--primary); }
-  .lede { font-size: 17px; color: var(--ink-2); max-width: 720px; }
+  .lede { font-size: 16px; color: var(--ink-2); max-width: 700px; }
   .lede strong { color: var(--ink); font-weight: 600; }
+  .pills { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+  .pill {
+    font-size: 12px; padding: 4px 10px; border-radius: 999px;
+    background: var(--primary-soft); color: var(--primary); font-weight: 500;
+  }
+  .pill.amber { background: var(--accent-soft); color: var(--accent); }
 
-  /* ---------- 卡片 ---------- */
+  section { margin-bottom: 48px; }
   .card {
-    background: var(--card);
-    border: 1px solid var(--line);
-    border-radius: 16px;
-    padding: 28px 28px 24px;
-    box-shadow: 0 2px 8px rgba(0,0,0,.03);
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 14px; padding: 24px; box-shadow: 0 2px 8px rgba(0,0,0,.03);
   }
-  .card-head {
-    display: flex; align-items: center; gap: 12px;
-    margin-bottom: 18px;
-  }
-  .badge {
-    display: inline-flex; align-items: center; justify-content: center;
-    width: 32px; height: 32px; border-radius: 8px;
-    background: var(--primary-soft); color: var(--primary);
-  }
-  .badge.amber { background: var(--accent-soft); color: var(--accent); }
-  .badge.rose  { background: var(--rose-soft); color: var(--rose); }
-  section { margin-bottom: 56px; }
-  section .meta {
-    color: var(--muted); font-size: 13px; margin-bottom: 18px;
-    display: flex; gap: 14px; flex-wrap: wrap;
-  }
-  section .meta span::before { content: "·"; margin-right: 8px; color: var(--line); }
-  section .meta span:first-child::before { content: ""; margin: 0; }
 
-  /* ---------- 文件网格 ---------- */
-  .files {
-    display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px;
+  /* 模块卡片 */
+  .modules { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .mod {
+    background: #fbfaf6; border: 1px solid var(--line);
+    border-radius: 10px; padding: 14px 16px;
   }
-  .file {
-    display: grid; grid-template-columns: 130px 1fr; gap: 14px;
-    padding: 14px 16px; border: 1px solid var(--line);
-    border-radius: 10px; background: #fbfaf6;
+  .mod h4 {
+    margin: 0 0 4px; font-size: 13px; color: var(--ink);
+    display: flex; align-items: center; gap: 8px; font-weight: 600;
   }
-  .file .name { font-family: 'JetBrains Mono', monospace; font-size: 13px; color: var(--primary); font-weight: 500; }
-  .file .role { color: var(--ink-2); font-size: 14px; }
+  .mod h4::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--primary); }
+  .mod.amber h4::before { background: var(--accent); }
+  .mod.rose  h4::before { background: var(--rose); }
+  .mod p { font-size: 12.5px; color: var(--ink-2); margin: 0; line-height: 1.5; }
+  .mod .file-tag { margin-top: 6px; font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: var(--muted); }
 
-  /* ---------- Mermaid 容器 ---------- */
+  /* Mermaid */
   .mermaid {
-    background: #fbfaf6;
-    border: 1px solid var(--line);
-    border-radius: 10px;
-    padding: 24px 12px;
-    text-align: center;
-    overflow-x: auto;
+    background: #fbfaf6; border: 1px solid var(--line);
+    border-radius: 10px; padding: 20px 8px; text-align: center; overflow-x: auto;
   }
 
-  /* ---------- 表格 ---------- */
+  /* 表格 */
   table { width: 100%; border-collapse: collapse; font-size: 14px; }
   th, td { text-align: left; padding: 10px 12px; border-bottom: 1px dashed var(--line); }
   th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; }
-  td code { font-size: 12.5px; }
+  td code { font-size: 12px; }
   tr:last-child td { border-bottom: 0; }
 
-  /* ---------- 引用条 ---------- */
+  /* 引用条 */
   .callout {
-    border-left: 3px solid var(--primary);
-    background: var(--primary-soft);
-    padding: 14px 18px;
-    border-radius: 0 10px 10px 0;
-    color: var(--ink-2);
-    font-size: 14px;
+    border-left: 3px solid var(--primary); background: var(--primary-soft);
+    padding: 12px 16px; border-radius: 0 10px 10px 0; color: var(--ink-2); font-size: 14px;
   }
   .callout.amber { border-color: var(--accent); background: var(--accent-soft); }
   .callout.rose  { border-color: var(--rose); background: var(--rose-soft); }
 
-  /* ---------- 模块图（手写 SVG） ---------- */
-  .modules {
-    display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
-    gap: 14px;
-  }
-  .mod {
-    background: #fbfaf6;
-    border: 1px solid var(--line);
-    border-radius: 12px;
-    padding: 16px 18px;
-  }
-  .mod h4 {
-    margin: 0 0 6px;
-    font-size: 14px;
-    color: var(--ink);
-    display: flex; align-items: center; gap: 8px;
-  }
-  .mod h4::before {
-    content: ""; width: 8px; height: 8px; border-radius: 50%;
-    background: var(--primary);
-  }
-  .mod.accent h4::before { background: var(--accent); }
-  .mod.rose h4::before { background: var(--rose); }
-  .mod p { font-size: 13px; color: var(--ink-2); margin: 0; }
-  .mod .files-in {
-    margin-top: 8px; font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--muted);
-  }
+  /* 文件清单 */
+  .files { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 14px; font-size: 14px; }
+  .file { display: grid; grid-template-columns: 130px 1fr; gap: 10px; padding: 6px 0; border-bottom: 1px dashed var(--line); }
+  .file:last-child, .file:nth-last-child(2) { border-bottom: 0; }
+  .file .n { font-family: 'JetBrains Mono', monospace; font-size: 12.5px; color: var(--primary); }
+  .file .r { color: var(--ink-2); font-size: 13px; }
 
-  /* ---------- Footer ---------- */
   footer {
-    margin-top: 80px; padding-top: 24px; border-top: 1px solid var(--line);
+    margin-top: 64px; padding-top: 20px; border-top: 1px solid var(--line);
     color: var(--muted); font-size: 12px; display: flex; justify-content: space-between;
   }
 
   @media (max-width: 760px) {
-    .wrap { padding: 40px 18px 60px; }
-    h1.serif { font-size: 28px; }
-    h2.serif { font-size: 20px; }
-    .files, .modules { grid-template-columns: 1fr; }
-    .file { grid-template-columns: 1fr; gap: 4px; }
+    .wrap { padding: 36px 18px 60px; }
+    h1.serif { font-size: 26px; }
+    .modules { grid-template-columns: 1fr; }
+    .files { grid-template-columns: 1fr; }
+    .file { grid-template-columns: 1fr; gap: 2px; }
   }
 </style>
 </head>
 <body>
 <div class="wrap">
 
-  <!-- Hero -->
   <header class="hero">
     <span class="eyebrow">架构总览</span>
-    <h1 class="serif">fping-monitor 的代码地图</h1>
+    <h1 class="serif">fping-monitor · 代码地图</h1>
     <p class="lede">
-      一个 <strong>5 模块、3 协议</strong> 的轻量探活系统。核心目标是
-      "每周期一次 fping 批检 + 状态机带防抖 + 通知器可插拔"。本页用
-      4 张图带你看清：模块怎么分、数据怎么流、状态怎么变、哪里可以扩展。
+      单进程长驻容器，6 个 <code>.py</code> + 1 个 DDL + 2 个 YAML。核心是
+      <strong>批量化 fping + 状态机防抖 + 可插拔通知</strong>。这一页用 4 张图带你看清：
+      模块怎么分、数据怎么流、状态怎么变、哪里可以扩展。
     </p>
+    <div class="pills">
+      <span class="pill">容器常驻</span>
+      <span class="pill">单进程</span>
+      <span class="pill">DingTalk · 完整</span>
+      <span class="pill amber">Cuckoo · 占位</span>
+      <span class="pill">Host Tags</span>
+    </div>
   </header>
 
   <!-- 1. 模块分层 -->
   <section>
     <h3>01 · 模块分层</h3>
-    <h2 class="serif">5 个职责清晰的层，从 CLI 一直到底层 fping</h2>
-    <div class="meta">
-      <span>入口层</span><span>调度层</span><span>检测层</span><span>通知层</span><span>持久层</span>
-    </div>
-
+    <h2 class="serif">5 个职责层 + 1 个数据模型</h2>
     <div class="modules">
       <div class="mod">
-        <h4>入口层 · monitor.py</h4>
-        <p>解析 argparse，加载 YAML，调用 <code>build_components</code>，把控制权交给 Scheduler。</p>
-        <div class="files-in">sub: run / daemon / sync / events</div>
+        <h4>入口 · monitor.py</h4>
+        <p>解析 --config/--servers，加载配置 + 初始化日志，进入常驻循环。</p>
+        <div class="file-tag">~100 行，单函数 run_daemon</div>
       </div>
-      <div class="mod accent">
-        <h4>调度层 · scheduler.py</h4>
-        <p>单次执行 <code>run_once()</code>；<code>StateMachine._advance()</code> 是纯函数式状态转移。</p>
-        <div class="files-in">Scheduler · StateMachine · CycleResult</div>
+      <div class="mod amber">
+        <h4>调度 · scheduler.py</h4>
+        <p>Scheduler.run_once + StateMachine._advance 纯函数状态转移。</p>
+        <div class="file-tag">Scheduler · StateMachine · CycleResult</div>
       </div>
       <div class="mod rose">
-        <h4>检测层 · detector.py</h4>
-        <p>单次 fping 批检 + 输出解析，输出 <code>{name: bool}</code>。Detector 是协议，可替换。</p>
-        <div class="files-in">FpingDetector · merge_results</div>
+        <h4>检测 · detector.py</h4>
+        <p>单次 fping 批检，输出 {name: bool}。Detector 协议，可替换。</p>
+        <div class="file-tag">FpingDetector · merge_results</div>
       </div>
       <div class="mod">
-        <h4>通知层 · notifier.py</h4>
-        <p>统一 <code>notify_down/notify_recover</code>，分发到所有 Channel，单渠道失败不影响其他。</p>
-        <div class="files-in">Notifier · WeComChannel · _StubChannel</div>
+        <h4>通知 · notifier.py</h4>
+        <p>统一 notify_down/recover，分发到所有 Channel，单渠道失败不影响其他。</p>
+        <div class="file-tag">Notifier · DingTalk · Cuckoo 占位</div>
       </div>
-      <div class="mod accent">
-        <h4>持久层 · database.py</h4>
-        <p>薄封装 sqlite3，启动时应用 <code>sql/schema.sql</code>，对外只暴露 host/event 两类操作。</p>
-        <div class="files-in">Database · upsert/list/update/event</div>
+      <div class="mod amber">
+        <h4>持久 · database.py</h4>
+        <p>sqlite3 薄封装，启动时应用 sql/schema.sql，host/event 两类操作。</p>
+        <div class="file-tag">Database · _encode/decode_tags</div>
       </div>
       <div class="mod rose">
-        <h4>基础设施</h4>
-        <p><code>models.py</code> 定义 Host/Event/HostStatus/EventType；<code>util.py</code> 提供 YAML、日志、fping 解析。</p>
-        <div class="files-in">models.py · util.py</div>
+        <h4>基础 · models + util</h4>
+        <p>models.py 定义 Host(含 tags)/Event/枚举；util.py 提供 YAML/日志/fping 解析。</p>
+        <div class="file-tag">models.py · util.py</div>
       </div>
     </div>
   </section>
 
   <!-- 2. 数据流 -->
   <section>
-    <h3>02 · 单次检测数据流</h3>
-    <h2 class="serif">从命令行到一个 Webhook，一条线看完整周期</h2>
-    <div class="meta">
-      <span>左→右：CLI → fping → 状态机 → SQLite → Webhook</span>
-    </div>
-
+    <h3>02 · 数据流</h3>
+    <h2 class="serif">容器里 1 个 fping 进程，每 interval 秒循环一次</h2>
     <div class="card">
       <pre class="mermaid">
 flowchart LR
-  CLI["monitor.py<br/>cmd_run / cmd_daemon"]:::entry
-  CFG["config.yaml<br/>server.yaml"]:::cfg
+  YAML["config.yaml<br/>server.yaml"]:::cfg
+  MON["monitor.py<br/>run_daemon"]:::entry
   SCH["Scheduler.run_once()"]:::core
   DET["FpingDetector.detect()"]:::det
-  FP["fping -C1 -e<br/>(单次批检)"]:::sys
+  FP["fping -C1 -e<br/>一次批检所有 host"]:::sys
   SM["StateMachine._advance()"]:::core
   DB[("SQLite<br/>hosts / events")]:::store
-  NOT["Notifier.notify_down<br/>notify_recover"]:::not
-  WC["WeComChannel<br/>POST webhook"]:::ext
-  Q["dingtalk / slack /<br/>email (stub)"]:::ext
+  NT["Notifier.notify_down<br/>notify_recover"]:::not
+  DT["DingTalkChannel<br/>POST + 加签"]:::ext
+  CK["CuckooChannel<br/>占位（待实现）"]:::ext
 
-  CLI --> CFG
-  CLI --> SCH
+  YAML --> MON
+  MON --> SCH
   SCH --> DET
   DET --> FP
-  FP -- "stdout/stderr" --> DET
+  FP -- "stdout / stderr" --> DET
   DET -- "{name: bool}" --> SM
   SCH -- "list / update" --> DB
   SM -- "fired?" --> DB
-  SM -- "fired + 非 UNKNOWN" --> NOT
-  NOT --> WC
-  NOT -.占位.-> Q
+  SM -- "fired + 非 UNKNOWN" --> NT
+  NT --> DT
+  NT -.占位.-> CK
 
   classDef entry fill:#fbfaf6,stroke:#2f6f5e,color:#14171e
   classDef cfg   fill:#f1e3d3,stroke:#c97b3f,color:#14171e
@@ -295,32 +236,31 @@ flowchart LR
   classDef ext   fill:#fbfaf6,stroke:#7c7a72,color:#14171e,stroke-dasharray:4 3
       </pre>
     </div>
-
     <p class="callout">
-      关键不变量：<strong>Detector 只输出 {name: bool}</strong>，StateMachine 不知道 fping 存在；
-      <strong>Notifier 只接收 Host</strong>，StateMachine 不知道有 WeCom。中间这两层就是扩展点。
+      <strong>两个不变式</strong>：Detector 只输出 <code>{name: bool}</code>，StateMachine
+      不知道 fping 存在；Notifier 只接收 <code>Host</code>（含 tags），StateMachine
+      不知道有钉钉。中间两层就是扩展点。
     </p>
   </section>
 
-  <!-- 3. 时序图 -->
+  <!-- 3. 时序 -->
   <section>
-    <h3>03 · 时序：一次 run_once 的内部调用</h3>
+    <h3>03 · 时序：单次循环内部调用</h3>
     <h2 class="serif">从 <code>db.list_hosts()</code> 到 webhook POST</h2>
-
     <div class="card">
       <pre class="mermaid">
 sequenceDiagram
   autonumber
-  participant CLI as monitor.py
+  participant MON as monitor.py
   participant SCH as Scheduler
   participant DB as Database
   participant DET as FpingDetector
   participant FP as fping
   participant SM as StateMachine
   participant NT as Notifier
-  participant CH as WeComChannel
+  participant DT as DingTalkChannel
 
-  CLI->>SCH: run_once()
+  MON->>SCH: run_once()
   SCH->>DB: list_hosts()
   DB-->>SCH: [Host, ...]
   SCH->>DET: detect(hosts)
@@ -334,12 +274,13 @@ sequenceDiagram
     alt fired AND 旧状态非 UNKNOWN
       SM->>DB: insert_event(...)
       SM->>NT: notify_down/recover(host)
-      NT->>CH: notify_down/recover(host)
-      CH->>CH: requests.post(webhook)
+      NT->>DT: notify_down/recover(host)
+      DT->>DT: requests.post(webhook)
     end
   end
   SM-->>SCH: CycleResult
-  SCH-->>CLI: CycleResult
+  SCH-->>MON: CycleResult
+  MON-->>MON: sleep(interval) 继续下一轮
       </pre>
     </div>
   </section>
@@ -347,8 +288,7 @@ sequenceDiagram
   <!-- 4. 状态机 -->
   <section>
     <h3>04 · 状态机</h3>
-    <h2 class="serif">4 个跃迁路径，F = failure_threshold，R = recovery_threshold</h2>
-
+    <h2 class="serif">F = failure_threshold，R = recovery_threshold</h2>
     <div class="card">
       <pre class="mermaid">
 stateDiagram-v2
@@ -365,103 +305,121 @@ stateDiagram-v2
   DOWN --> DOWN: dead (fail_count++)
 
   note right of UNKNOWN
-    首次发现静默：不写入 events
-    表触发通知
+    首次发现静默：写 events
+    但不推 Webhook
   end note
       </pre>
     </div>
-
-    <div class="callout amber">
-      <strong>防抖语义</strong>：单次失败不会触发告警，必须连续 F 次才会写
-      <code>events.DOWN</code> 并调 <code>notify_down</code>。
-      恢复同理。flap（连续失败中偶尔有 1 次成功）会重置 <code>recover_count</code>。
-    </div>
+    <p class="callout amber">
+      <strong>防抖语义</strong>：单次失败不会触发告警，必须连续 F 次才写
+      <code>events.DOWN</code> 并调 <code>notify_down</code>。恢复同理。
+      flap（连续失败中偶发 1 次成功）会重置 <code>recover_count</code>。
+    </p>
   </section>
 
-  <!-- 5. 文件清单 -->
+  <!-- 5. 数据模型 -->
   <section>
-    <h3>05 · 源码清单</h3>
-    <h2 class="serif">每个文件一行话</h2>
+    <h3>05 · 数据模型</h3>
+    <h2 class="serif">2 张表，tags 用逗号分隔字符串存</h2>
+    <table>
+      <thead>
+        <tr><th style="width:18%">表</th><th>关键字段</th><th>说明</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>hosts</code></td>
+          <td><code>name</code> · <code>ip</code> · <code>tags</code> · <code>status</code> · <code>fail_count</code> · <code>recover_count</code> · <code>last_check</code> · <code>last_change</code></td>
+          <td>主机清单 + 当前状态机，<code>tags</code> 形如 <code>prod,db,shanghai</code></td>
+        </tr>
+        <tr>
+          <td><code>events</code></td>
+          <td><code>host_id</code> · <code>event</code> (DOWN/RECOVER) · <code>time</code> · <code>message</code></td>
+          <td>状态跃迁流水，按 host_id+time 建索引方便回溯</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
 
+  <!-- 6. 文件清单 -->
+  <section>
+    <h3>06 · 源码清单</h3>
+    <h2 class="serif">整个项目 13 个文件</h2>
     <div class="card">
       <div class="files">
-        <div class="file"><div class="name">monitor.py</div><div class="role">CLI 入口，参数解析 + 装配各组件。</div></div>
-        <div class="file"><div class="name">scheduler.py</div><div class="role">Scheduler.run_once + StateMachine 纯函数状态机。</div></div>
-        <div class="file"><div class="name">detector.py</div><div class="role">Detector 协议 + FpingDetector 实现 + merge_results。</div></div>
-        <div class="file"><div class="name">notifier.py</div><div class="role">Notifier 调度器 + WeCom 实现 + 钉钉/Slack/邮件占位。</div></div>
-        <div class="file"><div class="name">database.py</div><div class="role">SQLite 封装，schema 自动应用。</div></div>
-        <div class="file"><div class="name">models.py</div><div class="role">Host / Event / HostStatus / EventType 数据类与枚举。</div></div>
-        <div class="file"><div class="name">util.py</div><div class="role">YAML 加载、日志初始化、fping 输出解析。</div></div>
-        <div class="file"><div class="name">config.yaml</div><div class="role">全局配置：interval、阈值、fping 参数、通知渠道。</div></div>
-        <div class="file"><div class="name">server.yaml</div><div class="role">待监控主机清单。</div></div>
-        <div class="file"><div class="name">sql/schema.sql</div><div class="role">DDL：hosts、events 两张表 + 索引。</div></div>
+        <div class="file"><div class="n">monitor.py</div><div class="r">入口：参数解析 + run_daemon 循环</div></div>
+        <div class="file"><div class="n">scheduler.py</div><div class="r">Scheduler.run_once + StateMachine 纯函数</div></div>
+        <div class="file"><div class="n">detector.py</div><div class="r">Detector 协议 + FpingDetector 实现</div></div>
+        <div class="file"><div class="n">notifier.py</div><div class="r">Notifier + DingTalkChannel + CuckooChannel 占位</div></div>
+        <div class="file"><div class="n">database.py</div><div class="r">SQLite 封装，schema 自动应用，tags 编解码</div></div>
+        <div class="file"><div class="n">models.py</div><div class="r">Host (含 tags) / Event / 枚举</div></div>
+        <div class="file"><div class="n">util.py</div><div class="r">YAML 加载、日志初始化、fping 输出解析</div></div>
+        <div class="file"><div class="n">config.yaml</div><div class="r">全局配置：interval / 阈值 / fping / 通知</div></div>
+        <div class="file"><div class="n">server.yaml</div><div class="r">主机列表（name / ip / tags）</div></div>
+        <div class="file"><div class="n">sql/schema.sql</div><div class="r">DDL：hosts（含 tags）、events 两张表</div></div>
+        <div class="file"><div class="n">Dockerfile</div><div class="r">python:3.11-slim + fping，CMD python monitor.py</div></div>
+        <div class="file"><div class="n">docker-compose.yml</div><div class="r">挂载 config/server/state.db/logs，env 注入 webhook</div></div>
+        <div class="file"><div class="n">Makefile</div><div class="r">install / test / docker / docker-up / docker-down / clean</div></div>
+        <div class="file"><div class="n">README.md / README.cn.md</div><div class="r">中英两份使用说明</div></div>
       </div>
     </div>
   </section>
 
-  <!-- 6. 扩展点 -->
+  <!-- 7. 扩展点 -->
   <section>
-    <h3>06 · 扩展点</h3>
-    <h2 class="serif">加新检测器 / 新通知渠道，都不用改核心</h2>
-
+    <h3>07 · 扩展点</h3>
+    <h2 class="serif">加新检测器 / 新通知渠道，核心三件套不动</h2>
     <table>
       <thead>
-        <tr><th style="width:30%">想加什么</th><th>实现什么</th><th style="width:25%">在哪里注册</th></tr>
+        <tr><th style="width:22%">想加什么</th><th>实现什么</th><th style="width:22%">在哪里注册</th></tr>
       </thead>
       <tbody>
         <tr>
-          <td>TCP 端口探活</td>
+          <td>TCP / HTTP / SSH 探活</td>
           <td>实现 <code>Detector.detect(hosts) -&gt; {name: bool}</code></td>
-          <td>注入 <code>Scheduler(detector=...)</code></td>
+          <td><code>Scheduler(detector=...)</code></td>
         </tr>
         <tr>
-          <td>HTTP 健康检查</td>
-          <td>同上，结合 <code>merge_results</code> 做 AND</td>
-          <td>同上</td>
-        </tr>
-        <tr>
-          <td>SSH 登录</td>
-          <td>同上</td>
-          <td>同上</td>
-        </tr>
-        <tr>
-          <td>钉钉机器人</td>
-          <td>仿 <code>WeComChannel</code> 写 <code>notify_down/recover</code></td>
-          <td><code>_CHANNELS["dingtalk"] = DingTalkChannel</code></td>
-        </tr>
-        <tr>
-          <td>Slack Webhook</td>
-          <td>同上</td>
-          <td>同上</td>
+          <td>"ping AND https" 复合探活</td>
+          <td>用 <code>merge_results</code> 把多个 detector 做 AND</td>
+          <td>同上行</td>
         </tr>
         <tr>
           <td>邮件告警</td>
-          <td>同上（用 smtplib）</td>
-          <td>同上</td>
+          <td>仿 <code>DingTalkChannel</code> 写 <code>notify_down/recover</code></td>
+          <td><code>_CHANNELS["email"] = EmailChannel</code></td>
         </tr>
         <tr>
-          <td>二级阈值 / 维护窗口</td>
+          <td>布谷鸟（内部）</td>
+          <td>把 <code>CuckooChannel</code> 占位换成真实实现</td>
+          <td>取消 config.yaml 里的注释即可</td>
+        </tr>
+        <tr>
+          <td>钉钉加签</td>
+          <td>已内置：填 <code>secret</code> 即生效，URL 自动拼 timestamp + sign</td>
+          <td>config.yaml → dingtalk.secret</td>
+        </tr>
+        <tr>
+          <td>按 tag 路由通知</td>
+          <td>扩展 <code>Notifier.notify_*</code>，按 <code>host.tags</code> 决定走哪个 channel</td>
+          <td>notifier.py</td>
+        </tr>
+        <tr>
+          <td>维护窗口 / 静默时段</td>
           <td>扩展 <code>StateMachine._advance</code></td>
           <td>scheduler.py</td>
         </tr>
-        <tr>
-          <td>通知重试 / 死信</td>
-          <td>在 <code>notify/</code> 加队列</td>
-          <td>scheduler.py + 新建 notify/queue.py</td>
-        </tr>
       </tbody>
     </table>
-
     <p class="callout rose">
-      <strong>不变量</strong>：新增的 Detector / Channel 只需要返回 / 接受
-      <code>{name: bool}</code> 和 <code>Host</code> 这两个稳定类型。核心三件套
-      （Scheduler / StateMachine / Database）保持原样。
+      <strong>不变量</strong>：新增的 Detector / Channel 只需要产出 / 接受
+      <code>{name: bool}</code> 和 <code>Host</code>（含 tags）这两个稳定类型。
+      核心三件套（Scheduler / StateMachine / Database）保持原样。
     </p>
   </section>
 
   <footer>
     <span>fping-monitor · docs/architecture.html</span>
-    <span>5 模块 · 3 协议 · 0 业务硬编码</span>
+    <span>6 模块 · 2 表 · 13 文件 · 1 进程</span>
   </footer>
 </div>
 
