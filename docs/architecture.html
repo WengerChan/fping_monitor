@@ -1,0 +1,488 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>fping-monitor · 架构总览</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Outfit:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+<style>
+  :root {
+    --bg: #f7f5f0;
+    --card: #ffffff;
+    --line: #e9e3d6;
+    --line-soft: #f0eadc;
+    --ink: #14171e;
+    --ink-2: #3a4256;
+    --muted: #7c7a72;
+    --primary: #2f6f5e;     /* 墨绿 */
+    --primary-soft: #d6e7e0;
+    --accent: #c97b3f;      /* 焦糖 */
+    --accent-soft: #f1e3d3;
+    --rose: #b06367;
+    --rose-soft: #efdede;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: 'Outfit', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    font-size: 15px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    /* 两个角落的极淡径向渐变 */
+    background-image:
+      radial-gradient(circle at 8% 0%, rgba(47,111,94,.05), transparent 40%),
+      radial-gradient(circle at 92% 100%, rgba(201,123,63,.05), transparent 40%);
+    background-attachment: fixed;
+  }
+
+  /* ---------- 排版 ---------- */
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 64px 28px 96px; }
+  h1.serif {
+    font-family: 'DM Serif Display', serif;
+    font-weight: 400;
+    font-size: 36px;
+    letter-spacing: -.01em;
+    line-height: 1.15;
+    margin: 0 0 12px;
+  }
+  h2.serif {
+    font-family: 'DM Serif Display', serif;
+    font-weight: 400;
+    font-size: 24px;
+    letter-spacing: -.005em;
+    margin: 0 0 14px;
+    color: var(--ink);
+  }
+  h3 {
+    font-family: 'Outfit', sans-serif;
+    font-size: 14px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .12em;
+    color: var(--muted);
+    margin: 0 0 18px;
+  }
+  p { margin: 0 0 12px; color: var(--ink-2); }
+  code, .mono { font-family: 'JetBrains Mono', monospace; font-size: 13px; }
+  code { background: var(--line-soft); padding: 1px 6px; border-radius: 4px; color: var(--ink); }
+
+  /* ---------- Hero ---------- */
+  .hero { display: grid; gap: 28px; margin-bottom: 72px; }
+  .eyebrow {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: 12px; font-weight: 600; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--primary);
+  }
+  .eyebrow::before { content: ""; width: 18px; height: 1px; background: var(--primary); }
+  .lede { font-size: 17px; color: var(--ink-2); max-width: 720px; }
+  .lede strong { color: var(--ink); font-weight: 600; }
+
+  /* ---------- 卡片 ---------- */
+  .card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 28px 28px 24px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.03);
+  }
+  .card-head {
+    display: flex; align-items: center; gap: 12px;
+    margin-bottom: 18px;
+  }
+  .badge {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 32px; height: 32px; border-radius: 8px;
+    background: var(--primary-soft); color: var(--primary);
+  }
+  .badge.amber { background: var(--accent-soft); color: var(--accent); }
+  .badge.rose  { background: var(--rose-soft); color: var(--rose); }
+  section { margin-bottom: 56px; }
+  section .meta {
+    color: var(--muted); font-size: 13px; margin-bottom: 18px;
+    display: flex; gap: 14px; flex-wrap: wrap;
+  }
+  section .meta span::before { content: "·"; margin-right: 8px; color: var(--line); }
+  section .meta span:first-child::before { content: ""; margin: 0; }
+
+  /* ---------- 文件网格 ---------- */
+  .files {
+    display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px;
+  }
+  .file {
+    display: grid; grid-template-columns: 130px 1fr; gap: 14px;
+    padding: 14px 16px; border: 1px solid var(--line);
+    border-radius: 10px; background: #fbfaf6;
+  }
+  .file .name { font-family: 'JetBrains Mono', monospace; font-size: 13px; color: var(--primary); font-weight: 500; }
+  .file .role { color: var(--ink-2); font-size: 14px; }
+
+  /* ---------- Mermaid 容器 ---------- */
+  .mermaid {
+    background: #fbfaf6;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 24px 12px;
+    text-align: center;
+    overflow-x: auto;
+  }
+
+  /* ---------- 表格 ---------- */
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px dashed var(--line); }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; }
+  td code { font-size: 12.5px; }
+  tr:last-child td { border-bottom: 0; }
+
+  /* ---------- 引用条 ---------- */
+  .callout {
+    border-left: 3px solid var(--primary);
+    background: var(--primary-soft);
+    padding: 14px 18px;
+    border-radius: 0 10px 10px 0;
+    color: var(--ink-2);
+    font-size: 14px;
+  }
+  .callout.amber { border-color: var(--accent); background: var(--accent-soft); }
+  .callout.rose  { border-color: var(--rose); background: var(--rose-soft); }
+
+  /* ---------- 模块图（手写 SVG） ---------- */
+  .modules {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 14px;
+  }
+  .mod {
+    background: #fbfaf6;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 16px 18px;
+  }
+  .mod h4 {
+    margin: 0 0 6px;
+    font-size: 14px;
+    color: var(--ink);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .mod h4::before {
+    content: ""; width: 8px; height: 8px; border-radius: 50%;
+    background: var(--primary);
+  }
+  .mod.accent h4::before { background: var(--accent); }
+  .mod.rose h4::before { background: var(--rose); }
+  .mod p { font-size: 13px; color: var(--ink-2); margin: 0; }
+  .mod .files-in {
+    margin-top: 8px; font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--muted);
+  }
+
+  /* ---------- Footer ---------- */
+  footer {
+    margin-top: 80px; padding-top: 24px; border-top: 1px solid var(--line);
+    color: var(--muted); font-size: 12px; display: flex; justify-content: space-between;
+  }
+
+  @media (max-width: 760px) {
+    .wrap { padding: 40px 18px 60px; }
+    h1.serif { font-size: 28px; }
+    h2.serif { font-size: 20px; }
+    .files, .modules { grid-template-columns: 1fr; }
+    .file { grid-template-columns: 1fr; gap: 4px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- Hero -->
+  <header class="hero">
+    <span class="eyebrow">架构总览</span>
+    <h1 class="serif">fping-monitor 的代码地图</h1>
+    <p class="lede">
+      一个 <strong>5 模块、3 协议</strong> 的轻量探活系统。核心目标是
+      "每周期一次 fping 批检 + 状态机带防抖 + 通知器可插拔"。本页用
+      4 张图带你看清：模块怎么分、数据怎么流、状态怎么变、哪里可以扩展。
+    </p>
+  </header>
+
+  <!-- 1. 模块分层 -->
+  <section>
+    <h3>01 · 模块分层</h3>
+    <h2 class="serif">5 个职责清晰的层，从 CLI 一直到底层 fping</h2>
+    <div class="meta">
+      <span>入口层</span><span>调度层</span><span>检测层</span><span>通知层</span><span>持久层</span>
+    </div>
+
+    <div class="modules">
+      <div class="mod">
+        <h4>入口层 · monitor.py</h4>
+        <p>解析 argparse，加载 YAML，调用 <code>build_components</code>，把控制权交给 Scheduler。</p>
+        <div class="files-in">sub: run / daemon / sync / events</div>
+      </div>
+      <div class="mod accent">
+        <h4>调度层 · scheduler.py</h4>
+        <p>单次执行 <code>run_once()</code>；<code>StateMachine._advance()</code> 是纯函数式状态转移。</p>
+        <div class="files-in">Scheduler · StateMachine · CycleResult</div>
+      </div>
+      <div class="mod rose">
+        <h4>检测层 · detector.py</h4>
+        <p>单次 fping 批检 + 输出解析，输出 <code>{name: bool}</code>。Detector 是协议，可替换。</p>
+        <div class="files-in">FpingDetector · merge_results</div>
+      </div>
+      <div class="mod">
+        <h4>通知层 · notifier.py</h4>
+        <p>统一 <code>notify_down/notify_recover</code>，分发到所有 Channel，单渠道失败不影响其他。</p>
+        <div class="files-in">Notifier · WeComChannel · _StubChannel</div>
+      </div>
+      <div class="mod accent">
+        <h4>持久层 · database.py</h4>
+        <p>薄封装 sqlite3，启动时应用 <code>sql/schema.sql</code>，对外只暴露 host/event 两类操作。</p>
+        <div class="files-in">Database · upsert/list/update/event</div>
+      </div>
+      <div class="mod rose">
+        <h4>基础设施</h4>
+        <p><code>models.py</code> 定义 Host/Event/HostStatus/EventType；<code>util.py</code> 提供 YAML、日志、fping 解析。</p>
+        <div class="files-in">models.py · util.py</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2. 数据流 -->
+  <section>
+    <h3>02 · 单次检测数据流</h3>
+    <h2 class="serif">从命令行到一个 Webhook，一条线看完整周期</h2>
+    <div class="meta">
+      <span>左→右：CLI → fping → 状态机 → SQLite → Webhook</span>
+    </div>
+
+    <div class="card">
+      <pre class="mermaid">
+flowchart LR
+  CLI["monitor.py<br/>cmd_run / cmd_daemon"]:::entry
+  CFG["config.yaml<br/>server.yaml"]:::cfg
+  SCH["Scheduler.run_once()"]:::core
+  DET["FpingDetector.detect()"]:::det
+  FP["fping -C1 -e<br/>(单次批检)"]:::sys
+  SM["StateMachine._advance()"]:::core
+  DB[("SQLite<br/>hosts / events")]:::store
+  NOT["Notifier.notify_down<br/>notify_recover"]:::not
+  WC["WeComChannel<br/>POST webhook"]:::ext
+  Q["dingtalk / slack /<br/>email (stub)"]:::ext
+
+  CLI --> CFG
+  CLI --> SCH
+  SCH --> DET
+  DET --> FP
+  FP -- "stdout/stderr" --> DET
+  DET -- "{name: bool}" --> SM
+  SCH -- "list / update" --> DB
+  SM -- "fired?" --> DB
+  SM -- "fired + 非 UNKNOWN" --> NOT
+  NOT --> WC
+  NOT -.占位.-> Q
+
+  classDef entry fill:#fbfaf6,stroke:#2f6f5e,color:#14171e
+  classDef cfg   fill:#f1e3d3,stroke:#c97b3f,color:#14171e
+  classDef core  fill:#d6e7e0,stroke:#2f6f5e,color:#14171e
+  classDef det   fill:#efdede,stroke:#b06367,color:#14171e
+  classDef sys   fill:#fbfaf6,stroke:#7c7a72,color:#14171e
+  classDef store fill:#e9e3d6,stroke:#7c7a72,color:#14171e
+  classDef not   fill:#f1e3d3,stroke:#c97b3f,color:#14171e
+  classDef ext   fill:#fbfaf6,stroke:#7c7a72,color:#14171e,stroke-dasharray:4 3
+      </pre>
+    </div>
+
+    <p class="callout">
+      关键不变量：<strong>Detector 只输出 {name: bool}</strong>，StateMachine 不知道 fping 存在；
+      <strong>Notifier 只接收 Host</strong>，StateMachine 不知道有 WeCom。中间这两层就是扩展点。
+    </p>
+  </section>
+
+  <!-- 3. 时序图 -->
+  <section>
+    <h3>03 · 时序：一次 run_once 的内部调用</h3>
+    <h2 class="serif">从 <code>db.list_hosts()</code> 到 webhook POST</h2>
+
+    <div class="card">
+      <pre class="mermaid">
+sequenceDiagram
+  autonumber
+  participant CLI as monitor.py
+  participant SCH as Scheduler
+  participant DB as Database
+  participant DET as FpingDetector
+  participant FP as fping
+  participant SM as StateMachine
+  participant NT as Notifier
+  participant CH as WeComChannel
+
+  CLI->>SCH: run_once()
+  SCH->>DB: list_hosts()
+  DB-->>SCH: [Host, ...]
+  SCH->>DET: detect(hosts)
+  DET->>FP: subprocess.run([fping, ...])
+  FP-->>DET: stdout / stderr
+  DET-->>SCH: {name: bool}
+  SCH->>SM: step(alive)
+  loop 每台 host
+    SM->>SM: _advance(host, is_alive)
+    SM->>DB: update_host_state(...)
+    alt fired AND 旧状态非 UNKNOWN
+      SM->>DB: insert_event(...)
+      SM->>NT: notify_down/recover(host)
+      NT->>CH: notify_down/recover(host)
+      CH->>CH: requests.post(webhook)
+    end
+  end
+  SM-->>SCH: CycleResult
+  SCH-->>CLI: CycleResult
+      </pre>
+    </div>
+  </section>
+
+  <!-- 4. 状态机 -->
+  <section>
+    <h3>04 · 状态机</h3>
+    <h2 class="serif">4 个跃迁路径，F = failure_threshold，R = recovery_threshold</h2>
+
+    <div class="card">
+      <pre class="mermaid">
+stateDiagram-v2
+  [*] --> UNKNOWN
+  UNKNOWN --> UP: alive (first touch)
+  UNKNOWN --> UNKNOWN: dead (fail_count++)
+
+  UP --> UP: alive (counters reset)
+  UP --> UP: dead (fail_count++)
+  UP --> DOWN: dead 失败 ≥ F / 通知
+
+  DOWN --> DOWN: alive (recover_count++)
+  DOWN --> UP: alive 成功 ≥ R / 通知
+  DOWN --> DOWN: dead (fail_count++)
+
+  note right of UNKNOWN
+    首次发现静默：不写入 events
+    表触发通知
+  end note
+      </pre>
+    </div>
+
+    <div class="callout amber">
+      <strong>防抖语义</strong>：单次失败不会触发告警，必须连续 F 次才会写
+      <code>events.DOWN</code> 并调 <code>notify_down</code>。
+      恢复同理。flap（连续失败中偶尔有 1 次成功）会重置 <code>recover_count</code>。
+    </div>
+  </section>
+
+  <!-- 5. 文件清单 -->
+  <section>
+    <h3>05 · 源码清单</h3>
+    <h2 class="serif">每个文件一行话</h2>
+
+    <div class="card">
+      <div class="files">
+        <div class="file"><div class="name">monitor.py</div><div class="role">CLI 入口，参数解析 + 装配各组件。</div></div>
+        <div class="file"><div class="name">scheduler.py</div><div class="role">Scheduler.run_once + StateMachine 纯函数状态机。</div></div>
+        <div class="file"><div class="name">detector.py</div><div class="role">Detector 协议 + FpingDetector 实现 + merge_results。</div></div>
+        <div class="file"><div class="name">notifier.py</div><div class="role">Notifier 调度器 + WeCom 实现 + 钉钉/Slack/邮件占位。</div></div>
+        <div class="file"><div class="name">database.py</div><div class="role">SQLite 封装，schema 自动应用。</div></div>
+        <div class="file"><div class="name">models.py</div><div class="role">Host / Event / HostStatus / EventType 数据类与枚举。</div></div>
+        <div class="file"><div class="name">util.py</div><div class="role">YAML 加载、日志初始化、fping 输出解析。</div></div>
+        <div class="file"><div class="name">config.yaml</div><div class="role">全局配置：interval、阈值、fping 参数、通知渠道。</div></div>
+        <div class="file"><div class="name">server.yaml</div><div class="role">待监控主机清单。</div></div>
+        <div class="file"><div class="name">sql/schema.sql</div><div class="role">DDL：hosts、events 两张表 + 索引。</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 6. 扩展点 -->
+  <section>
+    <h3>06 · 扩展点</h3>
+    <h2 class="serif">加新检测器 / 新通知渠道，都不用改核心</h2>
+
+    <table>
+      <thead>
+        <tr><th style="width:30%">想加什么</th><th>实现什么</th><th style="width:25%">在哪里注册</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>TCP 端口探活</td>
+          <td>实现 <code>Detector.detect(hosts) -&gt; {name: bool}</code></td>
+          <td>注入 <code>Scheduler(detector=...)</code></td>
+        </tr>
+        <tr>
+          <td>HTTP 健康检查</td>
+          <td>同上，结合 <code>merge_results</code> 做 AND</td>
+          <td>同上</td>
+        </tr>
+        <tr>
+          <td>SSH 登录</td>
+          <td>同上</td>
+          <td>同上</td>
+        </tr>
+        <tr>
+          <td>钉钉机器人</td>
+          <td>仿 <code>WeComChannel</code> 写 <code>notify_down/recover</code></td>
+          <td><code>_CHANNELS["dingtalk"] = DingTalkChannel</code></td>
+        </tr>
+        <tr>
+          <td>Slack Webhook</td>
+          <td>同上</td>
+          <td>同上</td>
+        </tr>
+        <tr>
+          <td>邮件告警</td>
+          <td>同上（用 smtplib）</td>
+          <td>同上</td>
+        </tr>
+        <tr>
+          <td>二级阈值 / 维护窗口</td>
+          <td>扩展 <code>StateMachine._advance</code></td>
+          <td>scheduler.py</td>
+        </tr>
+        <tr>
+          <td>通知重试 / 死信</td>
+          <td>在 <code>notify/</code> 加队列</td>
+          <td>scheduler.py + 新建 notify/queue.py</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <p class="callout rose">
+      <strong>不变量</strong>：新增的 Detector / Channel 只需要返回 / 接受
+      <code>{name: bool}</code> 和 <code>Host</code> 这两个稳定类型。核心三件套
+      （Scheduler / StateMachine / Database）保持原样。
+    </p>
+  </section>
+
+  <footer>
+    <span>fping-monitor · docs/architecture.html</span>
+    <span>5 模块 · 3 协议 · 0 业务硬编码</span>
+  </footer>
+</div>
+
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'base',
+    themeVariables: {
+      fontFamily: "'Outfit', 'PingFang SC', sans-serif",
+      primaryColor: '#fbfaf6',
+      primaryTextColor: '#14171e',
+      primaryBorderColor: '#2f6f5e',
+      lineColor: '#7c7a72',
+      secondaryColor: '#f1e3d3',
+      tertiaryColor: '#efdede',
+      fontSize: '13px',
+    },
+    flowchart: { curve: 'basis', useMaxWidth: true, htmlLabels: true },
+    sequence:  { useMaxWidth: true, actorMargin: 60, noteMargin: 12 },
+    stateDiagram: { useMaxWidth: true },
+  });
+</script>
+</body>
+</html>

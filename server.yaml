@@ -1,0 +1,14 @@
+# 待监控主机列表
+# name: 唯一主机名（必填）
+# ip:   目标地址，IPv4 或域名（必填）
+# tags: 业务标签，告警时会一起展示，方便快速定位（可选）
+hosts:
+  - name: gateway
+    ip: 192.168.1.1
+    tags: [network, infra]
+  - name: dns-google
+    ip: 8.8.8.8
+    tags: [network, external]
+  - name: dns-cloudflare
+    ip: 1.1.1.1
+    tags: [network, external]

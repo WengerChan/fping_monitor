@@ -1,0 +1,33 @@
+# fping_monitor 全局配置
+interval: 30                  # 检测周期（秒）
+failure_threshold: 3          # 连续失败多少次才判定 DOWN
+recovery_threshold: 2         # 连续成功多少次才恢复 UP
+
+database: state.db
+
+# fping 选项：每个周期一次批量化调用
+fping:
+  count: 1
+  interval_ms: 10
+  timeout_ms: 500
+  retry: 0
+  # 透传给 fping 的额外参数，例如 ["-I", "eth0"]
+  extra: []
+
+logging:
+  level: INFO                 # DEBUG / INFO / WARNING / ERROR
+  dir: logs
+  backup_days: 14
+
+notify:
+  enabled: true
+  # 渠道列表；每个渠道实现 notify_down / notify_recover
+  channels:
+    - type: dingtalk
+      webhook_url: ""         # 钉钉机器人 Webhook，或通过 DINGTALK_WEBHOOK 环境变量传入
+      secret: ""              # 机器人开启"加签"时必填，否则留空
+      at_mobiles: []          # @指定手机号
+      at_all: false           # 是否 @所有人
+    # 内部布谷鸟告警平台占位，后续接入时再启用
+    # - type: cuckoo
+    #   ...
