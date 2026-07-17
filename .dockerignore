@@ -1,0 +1,33 @@
+# 不让 Docker 上下文带上这些，加快 build
+.git
+.gitignore
+.github
+.gitattributes
+
+# 测试 / 文档 / 缓存
+tests/
+docs/
+data/
+logs/
+__pycache__
+*.pyc
+*.pyo
+.pytest_cache
+.coverage
+htmlcov/
+
+# 本地配置覆盖
+conf/*.local.yaml
+conf/*.local.yml
+
+# 编辑器
+.idea
+.vscode
+.DS_Store
+
+# 文档 / 构建产物
+*.md
+!conf/*.md
+Makefile
+docker-compose.yml
+Dockerfile

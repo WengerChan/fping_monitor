@@ -30,7 +30,7 @@ SQLite + log volumes.
     fping-monitor/
     ├── monitor.py          # entry point: long-running daemon loop
     ├── scheduler.py        # StateMachine + Scheduler (one cycle)
-    ├── detector.py         # FpingDetector (Protocol: detect -> {name: bool})
+    ├── detector.py         # FpingDetector (single batched fping call per cycle)
     ├── notifier.py         # Notifier + DingTalkChannel + CuckooChannel stub
     ├── database.py         # SQLite layer, schema in sql/schema.sql
     ├── models.py           # Host (with tags), Event, HostStatus, EventType
@@ -38,7 +38,8 @@ SQLite + log volumes.
     ├── conf/               # all config files in one place (single mount target)
     │   ├── config.yaml     # global config (interval, thresholds, fping, notify)
     │   └── server.yaml     # host list (name, ip, tags)
-    ├── state.db            # SQLite database (created at runtime, mounted as volume)
+    ├── data/               # state.db lives here (mounted as volume)
+    ├── state.db            # (legacy top-level location; current config uses data/state.db)
     ├── sql/schema.sql      # DDL
     ├── logs/               # rotating logs (mounted as volume)
     ├── docs/architecture.html  # visual architecture overview

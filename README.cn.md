@@ -25,7 +25,7 @@
     fping-monitor/
     ├── monitor.py          # 入口：长驻主循环
     ├── scheduler.py        # 状态机 + 单次调度
-    ├── detector.py         # FpingDetector（协议：detect -> {name: bool}）
+    ├── detector.py         # FpingDetector（每周期一次批量化 fping 调用）
     ├── notifier.py         # 通知器 + DingTalkChannel + CuckooChannel 占位
     ├── database.py         # SQLite 持久化层，DDL 在 sql/schema.sql
     ├── models.py           # Host（含 tags）/ Event / HostStatus / EventType
@@ -33,7 +33,7 @@
     ├── conf/               # 配置文件集中放这里（单目录挂载）
     │   ├── config.yaml     # 全局配置（间隔、阈值、fping 参数、通知渠道）
     │   └── server.yaml     # 主机列表（name / ip / tags）
-    ├── state.db            # SQLite 数据库（运行时创建，挂载为 volume）
+    ├── data/               # state.db 运行时落在这里（挂载为 volume）
     ├── sql/schema.sql      # 建表 DDL
     ├── logs/               # 按天滚动的日志（挂载为 volume）
     ├── docs/architecture.html  # 架构总览可视化页面
@@ -62,7 +62,7 @@ docker compose logs -f monitor
 
 容器行为：
 - 整个 `conf/` 目录挂载到容器（只读），往里加新 YAML 不需要改 compose
-- `state.db` 和 `logs/` 持久化在宿主机，重启不丢历史
+- `data/` 和 `logs/` 持久化在宿主机，重启不丢历史
 - 异常退出自动重启（`restart: unless-stopped`），停止用 `make docker-down`
 
 **为什么用 `conf/` 目录而不是散落的两个 yaml？** 以后想加新 yaml（按环境拆分：

@@ -177,7 +177,7 @@
       <div class="mod rose">
         <h4>检测 · detector.py</h4>
         <p>单次 fping 批检，输出 {name: bool}。Detector 协议，可替换。</p>
-        <div class="file-tag">FpingDetector · merge_results</div>
+        <div class="file-tag">FpingDetector</div>
       </div>
       <div class="mod">
         <h4>通知 · notifier.py</h4>
@@ -445,6 +445,31 @@ web-10.1.2.14  10.1.2.14  [web, prod]
     <p class="callout">
       <strong>安全护栏</strong>：单条 spec 最多展开 1024 个主机（防 <code>0.0.0.0/0</code> 这类误操作）。
       展开发生在 <code>Database.upsert_hosts</code>，整批事务化，校验失败不会半写入。
+    </p>
+  </section>
+
+  <!-- 5.8 健康检查 -->
+  <section>
+    <h3>05.8 · 健康检查（docker HEALTHCHECK）</h3>
+    <h2 class="serif">CLI 子命令，0/1 退出码，两项检查</h2>
+<pre style="margin:0; font-family:'JetBrains Mono',monospace; font-size:12.5px; line-height:1.55; color:var(--ink); background:transparent; white-space:pre;">
+<span style="color:var(--muted)"># Dockerfile</span>
+HEALTHCHECK --start-period=30s --interval=30s --timeout=10s --retries=3 \
+    CMD ["python", "monitor.py", "healthcheck"]
+
+<span style="color:var(--muted)"># monitor.py:run_healthcheck() 的两项检查</span>
+1. <span style="color:var(--primary)">Database(db_path).list_hosts()</span>     <span style="color:var(--muted)"># 验证 SQLite 可达</span>
+2. <span style="color:var(--primary)">FpingDetector().detect([Host(gateway)])</span>  <span style="color:var(--muted)"># 验证 fping 工具链</span>
+
+<span style="color:var(--muted)"># 烟测地址</span>
+healthcheck:
+  gateway: 1.1.1.1            <span style="color:var(--muted)"># Cloudflare DNS，改成内网 VIP 也行</span>
+</pre>
+    <p class="callout amber">
+      <strong>设计选择</strong>：没用 HTTP server（之前是 9090 端口跑
+      <code>/health</code> + <code>/ready</code> + <code>/status</code>）——
+      对 docker HEALTHCHECK 来说太重。CLI 子命令单进程、零依赖、stderr
+      输出失败原因，<code>docker inspect</code> 看得见。
     </p>
   </section>
 
