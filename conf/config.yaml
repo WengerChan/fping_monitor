@@ -1,11 +1,13 @@
 # fping_monitor 全局配置
-interval: 30                  # 检测周期（秒）
+interval: 60                  # 检测周期（秒）。必须 >= 2× 一轮 fping 耗时（避免节奏漂移）
 failure_threshold: 3          # 连续失败多少次才判定 DOWN
 recovery_threshold: 2         # 连续成功多少次才恢复 UP
 
 database: data/state.db       # SQLite 路径（相对 WORKDIR）
 
 # fping 选项：每个周期一次批量化调用
+# timeout_ms 按目标类型选：局域网 200，多机房 500-1000，公网/国际 1000-2000
+# 一轮耗时 ≈ count × (timeout_ms + interval_ms) + 1s 启动，1000 台通常 < 2s
 fping:
   count: 1
   interval_ms: 10
