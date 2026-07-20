@@ -10,8 +10,9 @@ jobs:
   test:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        python-version: ["3.11", "3.12"]
+        python-version: ["3.11", "3.12", "3.13"]
 
     steps:
       - uses: actions/checkout@v4
@@ -32,3 +33,23 @@ jobs:
 
       - name: Run pytest
         run: pytest -q
+
+  typecheck:
+    runs-on: ubuntu-latest
+    # 类型检查只在最新支持的 Python 上跑，避免老版本语法警告噪音。
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Run mypy
+        run: mypy monitor.py scheduler.py detector.py notifier.py database.py models.py util.py

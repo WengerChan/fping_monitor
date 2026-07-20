@@ -7,11 +7,11 @@ from __future__ import annotations
 
 import logging
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable, List, Optional
 
-from models import Event, EventType, Host, HostStatus
+from models import EventType, Host, HostStatus
 from util import expand_ip_spec
 
 log = logging.getLogger("fping_monitor.db")
@@ -35,27 +35,73 @@ def _decode_tags(raw: Optional[str]) -> List[str]:
 
 
 class Database:
-    def __init__(self, path: str):
+    def __init__(self, path: str, *, use_long_connection: bool = False):
         self.path = path
         # 确保父目录存在，避免首次运行时因目录缺失而失败
         Path(path).parent.mkdir(parents=True, exist_ok=True)
+        self._use_long_connection = use_long_connection
+        self._long_conn: Optional[sqlite3.Connection] = None
         self._init_schema()
 
     # ---- 连接管理 -------------------------------------------------------
 
     def _connect(self) -> sqlite3.Connection:
-        """创建一条新连接。autocommit 模式（isolation_level=None），由调用方显式控制事务。"""
+        """获取一条 SQLite 连接。
+
+        ``use_long_connection=False``（默认）：每次调用都新建连接。
+        适合测试 / 多进程场景，连接生命周期显式、可重入。
+
+        ``use_long_connection=True``：复用同一条连接，省去每操作 1~2ms 的
+        open/close 开销。**仅在单线程 daemon 里使用**，否则 SQLite 会因
+        多线程持有连接抛 ProgrammingError。daemon 主循环退出前应 ``close()``。
+        """
+        if self._use_long_connection:
+            if self._long_conn is None:
+                self._long_conn = self._open_connection()
+            return self._long_conn
+        return self._open_connection()
+
+    def _open_connection(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.path, timeout=10, isolation_level=None)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON")
         return conn
 
+    def close(self) -> None:
+        """关闭长连接。daemon SIGTERM 退出前调用，保证 WAL 文件落盘。"""
+        if self._long_conn is not None:
+            try:
+                self._long_conn.close()
+            except Exception:                       # noqa: BLE001
+                pass
+            self._long_conn = None
+
+    # 当前 schema 版本号（与 schema.sql 里的 DDL 同步）。如果改了 DDL
+    # 但没改这里，schema 不会被重新执行——请同时 bump 这个值。
+    _SCHEMA_VERSION = 1
+
     def _init_schema(self) -> None:
-        """首次启动时建表。"""
+        """按需建表（用 ``PRAGMA user_version`` 做幂等闸门）。
+
+        行为：
+            * 首次建库（user_version=0）→ 执行 schema.sql → 写入新版本号
+            * 已建库且版本匹配 → 跳过
+            * 已建库但版本不匹配 → 执行 schema.sql（DDL 自身应是幂等的
+              ``IF NOT EXISTS``），再覆盖版本号
+
+        这样 healthcheck 每 30s 跑一次也不会重复 IO。
+        """
         if not SCHEMA_FILE.exists():
             raise FileNotFoundError(f"找不到 schema 文件：{SCHEMA_FILE}")
         with self._connect() as conn:
+            cur = conn.execute("PRAGMA user_version")
+            current = cur.fetchone()[0]
+            if current >= self._SCHEMA_VERSION:
+                return
             conn.executescript(SCHEMA_FILE.read_text(encoding="utf-8"))
+            # executescript 跑过整个文件，包含 ``PRAGMA user_version;`` 语句。
+            # 现在显式写入目标版本号（用占位符避开参数化限制）。
+            conn.execute(f"PRAGMA user_version = {self._SCHEMA_VERSION}")
 
     # ---- 主机表 ---------------------------------------------------------
 
@@ -121,6 +167,30 @@ class Database:
             cur = conn.execute("SELECT * FROM hosts ORDER BY id")
             return [self._row_to_host(r) for r in cur.fetchall()]
 
+    def delete_hosts(self, names: Iterable[str]) -> int:
+        """按 name 删除主机。级联删除该主机的 events 行。
+
+        返回实际删除的主机行数。
+
+        不存在的 name 静默跳过（``DELETE WHERE name IN (...)`` 语义）。
+        """
+        names_list = list(names)
+        if not names_list:
+            return 0
+        placeholders = ",".join("?" for _ in names_list)
+        with self._connect() as conn:
+            cur = conn.execute(
+                f"DELETE FROM hosts WHERE name IN ({placeholders})",
+                names_list,
+            )
+            return cur.rowcount
+
+    def host_names(self) -> List[str]:
+        """返回全部主机的 name 列表（用于 YAML→DB 同步时算差集）。"""
+        with self._connect() as conn:
+            cur = conn.execute("SELECT name FROM hosts ORDER BY id")
+            return [r[0] for r in cur.fetchall()]
+
     def get_host_by_name(self, name: str) -> Optional[Host]:
         with self._connect() as conn:
             cur = conn.execute("SELECT * FROM hosts WHERE name = ?", (name,))
@@ -163,7 +233,7 @@ class Database:
     def insert_event(self, host_id: int, event: EventType,
                      message: str = "", at: Optional[datetime] = None) -> None:
         """插入一条状态跃迁事件。"""
-        when = (at or datetime.utcnow()).isoformat(timespec="seconds")
+        when = (at or datetime.now(timezone.utc)).isoformat(timespec="seconds")
         with self._connect() as conn:
             conn.execute(
                 "INSERT INTO events (host_id, event, time, message) VALUES (?, ?, ?, ?)",

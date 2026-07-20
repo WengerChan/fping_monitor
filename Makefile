@@ -19,8 +19,11 @@ test:  ## Run the test suite
 test-cov:  ## Run tests with coverage report
 	$(PY) -m pytest --cov=. --cov-report=term-missing
 
-lint:  ## Compile-check (no type checker configured)
+lint:  ## Compile-check (syntax + bytecode)
 	$(PY) -m compileall monitor.py scheduler.py detector.py notifier.py database.py models.py util.py
+
+typecheck:  ## Run mypy (optional, requires mypy installed)
+	$(PY) -m mypy monitor.py scheduler.py detector.py notifier.py database.py models.py util.py
 
 clean:  ## Remove caches and local state
 	rm -rf __pycache__ */__pycache__ data/*.db data/*.db-* logs/*.log.* .pytest_cache .coverage

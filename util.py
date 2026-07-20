@@ -79,14 +79,46 @@ class TextFormatter(logging.Formatter):
         super().__init__(fmt=self.DEFAULT, datefmt=self.DATEFMT)
 
 
+def _existing_log_handlers(logger: logging.Logger, fmt: str,
+                                log_dir: str) -> bool:
+    """检查现有 handler 是否已经满足当前配置。
+
+    返回 True 表示现有 handler 可以直接复用（无需重建）；False 表示需要重建。
+
+    复用条件：
+        * 恰好有一个 FileHandler + 一个 StreamHandler
+        * Formatter 类型匹配（JsonFormatter ↔ "json"，TextFormatter ↔ 其他）
+        * FileHandler 的 baseFilename 和当前 log_dir 匹配
+    """
+    file_h = stream_h = None
+    for h in logger.handlers:
+        if isinstance(h, TimedRotatingFileHandler):
+            file_h = h
+        elif isinstance(h, logging.StreamHandler) and not isinstance(h, TimedRotatingFileHandler):
+            stream_h = h
+    if file_h is None or stream_h is None:
+        return False
+    expected_cls = JsonFormatter if fmt == "json" else TextFormatter
+    if not isinstance(file_h.formatter, expected_cls):
+        return False
+    expected_path = os.path.join(log_dir, "fping_monitor.log")
+    try:
+        if os.path.abspath(file_h.baseFilename) != os.path.abspath(expected_path):
+            return False
+    except AttributeError:
+        return False
+    return True
+
+
 def setup_logging(level: str = "INFO", log_dir: str = "logs",
                   backup_days: int = 14,
                   fmt: str = "json") -> logging.Logger:
     """初始化全局 logger，支持 JSON / TEXT 两种格式。
 
     行为：
-        * 每次调用都重建 handler（保证 ``fmt`` 变更能立刻生效；旧 handler 会先 close）
-        * level 每次都更新
+        * level 每次都更新（廉价）
+        * handler **仅在配置真变了**（fmt / log_dir 切换）时重建——
+          避免每次 SIGHUP 重建 TimedRotatingFileHandler 丢失轮转状态
         * 写到 ``logs/fping_monitor.log``（按天滚动，保留 ``backup_days`` 天）
         * 同时输出到 stderr
         * ``logger.propagate = False`` 避免重复输出
@@ -95,7 +127,11 @@ def setup_logging(level: str = "INFO", log_dir: str = "logs",
     logger.setLevel(getattr(logging, level.upper(), logging.INFO))
     logger.propagate = False
 
-    # 重建 handler：让 format 变化能立即生效（之前挂的可能不是同一种 Formatter）
+    if _existing_log_handlers(logger, fmt, log_dir):
+        # 配置没变 → 不重建，保留 TimedRotatingFileHandler 的 rolloverAt 等内部状态
+        return logger
+
+    # 配置变了 → 重建
     for h in list(logger.handlers):
         try:
             h.close()
@@ -333,11 +369,11 @@ class ConfigWatcher:
 
         changed: Optional[str] = None
         if self._mtime_changed(self._config_path, self._cfg_mtime):
-            self._load_config(force=False)
-            changed = "config"
+            if self._load_config(force=False):
+                changed = "config"
         if self._mtime_changed(self._servers_path, self._servers_mtime):
-            self._load_servers(force=False)
-            changed = "servers" if changed is None else "all"
+            if self._load_servers(force=False):
+                changed = "servers" if changed is None else "all"
         return changed
 
     # ---- 内部方法 -------------------------------------------------------
@@ -357,8 +393,13 @@ class ConfigWatcher:
             return False
         return mt != last
 
-    def _load_config(self, *, force: bool) -> None:
-        self._cfg = self._safe_load(self._config_path)
+    def _load_config(self, *, force: bool) -> bool:
+        """尝试加载 config.yaml；成功返回 True（数据已替换），失败返回 False（旧值保留）。"""
+        loaded = self._safe_load(self._config_path)
+        if loaded is None:
+            # YAML 解析失败，保留旧配置 + 旧 mtime，下一轮还会再试
+            return False
+        self._cfg = loaded
         self._cfg_mtime = self._mtime(self._config_path)
         if force:
             log_msg = "强制重载"
@@ -367,21 +408,51 @@ class ConfigWatcher:
         logging.getLogger("fping_monitor").info(
             "config.yaml %s，已重读", log_msg
         )
+        return True
 
-    def _load_servers(self, *, force: bool) -> None:
-        self._server_cfg = self._safe_load(self._servers_path)
+    def _load_servers(self, *, force: bool) -> bool:
+        """尝试加载 server.yaml；成功返回 True，失败返回 False（旧值保留）。"""
+        loaded = self._safe_load(self._servers_path)
+        if loaded is None:
+            return False
+        self._server_cfg = loaded
         self._servers_mtime = self._mtime(self._servers_path)
         logging.getLogger("fping_monitor").info(
             "server.yaml 变更（hosts=%d），已重读",
             len(self._server_cfg.get("hosts", []) or []),
         )
+        return True
 
     @staticmethod
-    def _safe_load(path: Path) -> Dict[str, Any]:
-        """加载 YAML，文件不存在时返回空 dict 而不是抛错（便于文件被临时移走的场景）。"""
+    def _safe_load(path: Path) -> Optional[Dict[str, Any]]:
+        """加载 YAML。
+
+        返回：
+            * ``None`` — 加载失败（文件不存在 或 YAML 语法错）。调用方应保留旧值。
+            * ``dict`` — 加载成功（空文件视作 ``{}``）。
+
+        设计：
+            * 文件不存在：warning + 返回 None（便于文件被临时移走的场景）。
+            * YAML 解析失败：error + 返回 None（**不抛异常**，daemon 主循环
+              不应因为写错的配置被 kill，保留旧配置跑）。
+        """
+        log = logging.getLogger("fping_monitor")
         if not path.exists():
-            logging.getLogger("fping_monitor").warning(
-                "配置文件不存在：%s（视为空配置）", path
+            log.warning("配置文件不存在：%s（视为空配置）", path)
+            return None
+        try:
+            return load_yaml(path)
+        except yaml.YAMLError as e:
+            log.error(
+                "YAML 解析失败：%s (%s)；保留旧配置",
+                path, e,
+                extra={"event": "yaml_error", "path": str(path)},
             )
-            return {}
-        return load_yaml(path)
+            return None
+        except OSError as e:
+            log.error(
+                "YAML 文件读取失败：%s (%s)；保留旧配置",
+                path, e,
+                extra={"event": "yaml_error", "path": str(path)},
+            )
+            return None

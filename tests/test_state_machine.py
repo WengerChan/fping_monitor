@@ -1,5 +1,5 @@
 """End-to-end state machine tests through Scheduler."""
-from datetime import datetime
+from datetime import datetime, timezone
 
 import pytest
 
@@ -28,7 +28,7 @@ def _seed(db, name="h1", ip="8.8.8.8", status=HostStatus.UNKNOWN,
     if status != HostStatus.UNKNOWN or fail or rec:
         db.update_host_state(
             h.id, status=status, fail_count=fail, recover_count=rec,
-            last_check=datetime.utcnow(), last_change=datetime.utcnow(),
+            last_check=datetime.now(timezone.utc), last_change=datetime.now(timezone.utc),
         )
     return db.get_host_by_name(name)
 

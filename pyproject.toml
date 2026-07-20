@@ -1,0 +1,40 @@
+[project]
+name = "fping-monitor"
+version = "0.1.0"
+description = "Lightweight server liveness monitor built on fping, SQLite, Python"
+requires-python = ">=3.11"
+
+[tool.mypy]
+python_version = "3.11"
+files = ["monitor.py", "scheduler.py", "detector.py", "notifier.py",
+         "database.py", "models.py", "util.py"]
+check_untyped_defs = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+no_implicit_optional = true
+show_error_codes = true
+
+# 不强求所有函数都加注解（项目是渐进式的），但已加注解的地方必须正确
+disallow_untyped_defs = false
+
+[[tool.mypy.overrides]]
+# 数据库 / 第三方库没类型提示，跳过
+module = ["yaml", "sqlite3"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.coverage.run]
+source = ["."]
+include = ["monitor.py", "scheduler.py", "detector.py", "notifier.py",
+           "database.py", "models.py", "util.py"]
+omit = ["tests/*", "conf/*", "data/*", "logs/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+]

@@ -64,6 +64,15 @@ docker compose logs -f monitor
 - 整个 `conf/` 目录挂载到容器（只读），往里加新 YAML 不需要改 compose
 - `data/` 和 `logs/` 持久化在宿主机，重启不丢历史
 - 异常退出自动重启（`restart: unless-stopped`），停止用 `make docker-down`
+- 容器内**以专用非 root 用户**运行（`monitor`，UID 10001）—— 只需
+  `CAP_NET_RAW` 调 `fping`。宿主机 bind mount 的 `./data` 和 `./logs`
+  需要给该 UID 写权限：
+
+  ```bash
+  sudo chown -R 10001:10001 data logs
+  ```
+
+  （不执行会在首次写入时报权限错误退出。）
 
 **为什么用 `conf/` 目录而不是散落的两个 yaml？** 以后想加新 yaml（按环境拆分：
 `conf/server-prod.yaml` / `conf/server-staging.yaml`，或者本地开发覆盖
@@ -274,19 +283,19 @@ python monitor.py healthcheck
 `healthcheck.gateway` 只是个可达性烟测地址，可以改成你信任的任意地址
 （路由器、内网 VIP 等）。
 
+> `healthcheck` 子命令是**全项目唯一**允许使用 `print()` 的地方。其他
+> 模块一律走结构化 logging，方便直接送 Logstash / ELK。这里必须用 print
+> 是 docker HEALTHCHECK 的契约要求：返回退出码 + stderr 详情。
+
 ## 测试
 
 ```bash
-make test
+make test         # 跑整套 pytest
+make test-cov     # 带覆盖率报告
 ```
 
-覆盖范围（共 33 个测试）：
-
-- `test_parser.py`     — fping 输出解析
-- `test_state_machine.py` — 状态机全部转换路径
-- `test_database.py`   — SQLite 增删改查 + tags 持久化
-- `test_notifier.py`   — 钉钉负载校验、加签、env 注入（基于 Mock）
-- `test_scheduler.py`  — 端到端，注入伪检测器
+测试覆盖**每个模块**；新增代码要求自带测试。完整列表见
+`pytest --collect-only -q`。
 
 ## 架构总览
 
@@ -297,12 +306,20 @@ make test
 
 **Q：怎么改主机列表？**
 A：直接编辑宿主机上的 `server.yaml`。容器会在下一个检测周期（约
-`config.interval` 秒）自动从 YAML 重新同步。无需重启。
+`config.interval` 秒）自动从 YAML 重新同步。无需重启。**从 YAML 中
+移除的主机会被自动删除**（同时清理 events 表里的历史）。
 
 **Q：怎么改阈值或周期？**
-A：编辑 `config.yaml`，重启容器生效（`docker compose restart monitor`）。
-如果希望热加载，需要在 `Scheduler` 里订阅文件变更事件——目前未实现。
+A：编辑 `config.yaml` 即可，**无需重启**——`interval` / `failure_threshold`
+/ `recovery_threshold` / `fping.*` / `notify.channels` 全部热加载，
+下一轮检测自动生效。需要立即生效可向容器发 `SIGHUP`（详见上文"配置热加载"
+小节）。注意 `database` 路径不支持热改，需重启容器。
 
 **Q：fping 输出格式变了怎么办？**
 A：所有解析逻辑集中在 `util.py:parse_fping_output`，按需调整正则即可，
 其他模块不受影响。
+
+**Q：通知在哪？为什么没收到钉钉告警？**
+A：默认配置 `notify.enabled: true`，但 `dingtalk.webhook_url` 为空时
+会发 warning 并跳过（用 `DINGTALK_WEBHOOK` 环境变量或填到 YAML 都行）。
+也可以临时关掉：`notify.enabled: false`。

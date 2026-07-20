@@ -136,3 +136,45 @@ def test_typical_daemon_loop(cfg_path, srv_path):
     w.reload(force=True)
     # 不变 mtime 也会重新读
     assert w.cfg["interval"] == 5
+
+
+# ---- YAML 异常兜底 ---------------------------------------------------------
+
+
+def test_malformed_yaml_keeps_old_config(cfg_path, srv_path):
+    """YAML 解析失败时，daemon 不应崩溃，应保留旧配置 + 旧 mtime。"""
+    w = ConfigWatcher(cfg_path, srv_path)
+    assert w.cfg.get("interval") == 30
+
+    # 写错 YAML（流序列没闭合）
+    _touch(cfg_path, "interval: [60, 30\n")
+    assert w.reload() is None       # 没真"换成功"
+    assert w.cfg.get("interval") == 30       # 旧值保留
+
+    # 修好以后下一次 reload 能恢复
+    _touch(cfg_path, "interval: 60\n")
+    assert w.reload() == "config"
+    assert w.cfg.get("interval") == 60
+
+
+def test_malformed_servers_yaml_keeps_old_servers(cfg_path, srv_path):
+    w = ConfigWatcher(cfg_path, srv_path)
+    assert len(w.server_cfg["hosts"]) == 1
+
+    _touch(srv_path, "hosts: [\n")      # 错的
+    assert w.reload() is None
+    assert len(w.server_cfg["hosts"]) == 1
+
+    _touch(srv_path, "hosts:\n  - {name: a, ip: 1.1.1.1}\n  - {name: b, ip: 2.2.2.2}\n")
+    assert w.reload() == "servers"
+    assert len(w.server_cfg["hosts"]) == 2
+
+
+def test_one_file_bad_other_file_good_returns_partial_change(cfg_path, srv_path):
+    """config 坏了 / server 好了：reload 应只报 'servers'，不误报 'config'。"""
+    w = ConfigWatcher(cfg_path, srv_path)
+    _touch(cfg_path, "interval: [60\n")           # 坏
+    _touch(srv_path, "hosts: []\n")               # 好
+    assert w.reload() == "servers"
+    assert w.cfg.get("interval") == 30            # 旧值
+    assert w.server_cfg == {"hosts": []}

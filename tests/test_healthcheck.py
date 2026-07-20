@@ -22,11 +22,14 @@ def _cfg(db_path="data/state.db", gateway="1.1.1.1"):
 def test_returns_zero_when_all_ok(tmp_path, monkeypatch):
     cfg = _cfg(db_path=str(tmp_path / "state.db"), gateway="1.1.1.1")
     # 不真跑 fping，模拟 alive=True
+    from detector import DetectResult
     from models import Host
-    monkeypatch.setattr(
-        "monitor.FpingDetector.detect",
-        lambda self, hosts: {h.name: True for h in hosts},
-    )
+    def _fake_detect(self, hosts):
+        return DetectResult(
+            alive={h.name: True for h in hosts},
+            attempted=len(hosts), reachable=len(hosts),
+        )
+    monkeypatch.setattr("monitor.FpingDetector.detect", _fake_detect)
     assert run_healthcheck(cfg) == 0
 
 
@@ -61,9 +64,13 @@ def test_returns_one_when_db_path_invalid(tmp_path, monkeypatch):
 def test_returns_one_when_fping_unreachable(tmp_path, monkeypatch):
     cfg = _cfg(db_path=str(tmp_path / "state.db"), gateway="127.0.0.1")
     # 模拟 fping 探测失败（不可达）
+    from detector import DetectResult
     monkeypatch.setattr(
         "monitor.FpingDetector.detect",
-        lambda self, hosts: {h.name: False for h in hosts},
+        lambda self, hosts: DetectResult(
+            alive={h.name: False for h in hosts},
+            attempted=len(hosts), reachable=0,
+        ),
     )
     assert run_healthcheck(cfg) == 1
 
@@ -85,9 +92,13 @@ def test_default_gateway_is_set(tmp_path, monkeypatch):
     """不配 healthcheck.gateway 时应有默认值（1.1.1.1）。"""
     cfg = {"database": str(tmp_path / "state.db")}     # 没 healthcheck
     seen_ips = []
+    from detector import DetectResult
     def _spy(self, hosts):
         seen_ips.extend(h.ip for h in hosts)
-        return {h.name: True for h in hosts}
+        return DetectResult(
+            alive={h.name: True for h in hosts},
+            attempted=len(hosts), reachable=len(hosts),
+        )
     monkeypatch.setattr("monitor.FpingDetector.detect", _spy)
     assert run_healthcheck(cfg) == 0
     assert seen_ips == ["1.1.1.1"]

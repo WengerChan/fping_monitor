@@ -6,6 +6,7 @@ from datetime import datetime
 
 import pytest
 
+from logging.handlers import TimedRotatingFileHandler
 from util import JsonFormatter, TextFormatter, setup_logging
 
 
@@ -132,3 +133,50 @@ def test_setup_logging_rebuilds_on_format_change(tmp_path):
     assert all(isinstance(h.formatter, TextFormatter) for h in logger.handlers)
     # 旧 JsonFormatter handler 应已被移除
     assert not any(isinstance(h.formatter, JsonFormatter) for h in logger.handlers)
+
+
+# ---- setup_logging 智能重建 ---------------------------------------------------
+
+
+def test_setup_logging_preserves_handlers_when_unchanged(tmp_path):
+    """fmt / log_dir 都未变时，setup_logging 应复用现有 handler，不重建。"""
+    logger = setup_logging(level="INFO", log_dir=str(tmp_path), fmt="json")
+    # 取一次 handler 引用
+    file_handler_before = next(h for h in logger.handlers
+                               if isinstance(h, TimedRotatingFileHandler))
+    stream_handler_before = next(h for h in logger.handlers
+                                 if not isinstance(h, TimedRotatingFileHandler))
+
+    # 再次调用，参数完全相同
+    setup_logging(level="DEBUG", log_dir=str(tmp_path), fmt="json")
+
+    # handler 应还是同一对象
+    file_handler_after = next(h for h in logger.handlers
+                              if isinstance(h, TimedRotatingFileHandler))
+    stream_handler_after = next(h for h in logger.handlers
+                                if not isinstance(h, TimedRotatingFileHandler))
+    assert file_handler_before is file_handler_after
+    assert stream_handler_before is stream_handler_after
+    # 但 level 已经更新
+    assert logger.level == logging.DEBUG
+
+
+def test_setup_logging_rebuilds_when_fmt_changes(tmp_path):
+    logger = setup_logging(level="INFO", log_dir=str(tmp_path), fmt="json")
+    before = list(logger.handlers)
+    setup_logging(level="INFO", log_dir=str(tmp_path), fmt="text")
+    after = list(logger.handlers)
+    # handlers 是新对象（不是 before 里任何一个）
+    assert not any(h is old for h in after for old in before)
+    # 且 formatter 已经切到 TextFormatter
+    from util import TextFormatter
+    assert all(isinstance(h.formatter, TextFormatter) for h in after)
+
+
+def test_setup_logging_rebuilds_when_log_dir_changes(tmp_path):
+    d1 = tmp_path / "a"; d2 = tmp_path / "b"
+    logger = setup_logging(level="INFO", log_dir=str(d1), fmt="json")
+    setup_logging(level="INFO", log_dir=str(d2), fmt="json")
+    file_h = next(h for h in logger.handlers
+                  if isinstance(h, TimedRotatingFileHandler))
+    assert str(d2) in file_h.baseFilename

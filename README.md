@@ -17,8 +17,6 @@ SQLite + log volumes.
 - All state in SQLite, all configuration in YAML.
 - Hosts carry **business tags** (e.g. `prod`, `db`, `shanghai`) that show up
   in alert messages for faster triage.
-- Hosts carry **business tags** (e.g. `prod`, `db`, `shanghai`) that show up
-  in alert messages for faster triage.
 - Pluggable `Channel` interface — add Email / Slack / Cuckoo channels
   without touching the core.
 - Daily rotating logs via `logging`, never `print`.
@@ -71,6 +69,15 @@ The container:
   becomes accessible inside the container, no `docker-compose.yml` edits needed.
 - Persists `state.db` and `logs/` on the host so restarts don't lose history.
 - Restarts automatically unless you `make docker-down`.
+- Runs as a **dedicated non-root user** (`monitor`, UID 10001) — only needs
+  `CAP_NET_RAW` to run `fping`. Bind-mounted `./data` and `./logs` need to
+  be writable by that UID on the host:
+
+  ```bash
+  sudo chown -R 10001:10001 data logs
+  ```
+
+  (If you skip this, the container exits with permission errors on first write.)
 
 **Why a `conf/` directory instead of separate files?** When you add a new
 YAML (e.g. `conf/server-prod.yaml`, `conf/server-staging.yaml`, or a
@@ -284,19 +291,20 @@ see the status; with `docker inspect` you get the full output.
 The gateway field is just a reachability smoke test — change it to
 whatever address you trust to be up (your router, an internal VIP, etc.).
 
+> The `healthcheck` subcommand is the **only** place in the codebase that
+> uses `print()`. Everywhere else uses the structured logger so logs are
+> shippable to Logstash / ELK without parsing. `print` here is required
+> by the docker HEALTHCHECK contract (exit code + stderr detail).
+
 ## Tests
 
 ```bash
-make test
+make test         # 跑整套 pytest
+make test-cov     # 带覆盖率报告
 ```
 
-Coverage (33 tests):
-
-- `test_parser.py` — fping output parser
-- `test_state_machine.py` — full transition table
-- `test_database.py` — SQLite round-trip + tag persistence
-- `test_notifier.py` — DingTalk payloads (Mock) + signature + env var injection
-- `test_scheduler.py` — end-to-end with fake detector
+Coverage spans **every module** in the project; new code is expected to
+ship with tests. Run `pytest --collect-only -q` to see the full list.
 
 ## Architecture overview
 

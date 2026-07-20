@@ -7,6 +7,15 @@
 当前支持的渠道：
   * ``dingtalk`` — 钉钉自定义机器人 Webhook（完整实现）
   * ``cuckoo``   — 内部布谷鸟告警平台占位（保留扩展点）
+
+派发模式：
+  * ``async_dispatch=True``（默认）：用 ``ThreadPoolExecutor`` 派发，
+    webhook POST 不阻塞主循环；适合生产环境。
+  * ``async_dispatch=False``：同步派发，测试 / 本地开发用。
+
+防抖：
+  * ``min_interval_s > 0`` 时，``(channel.name, host.name, kind)`` 在
+    ``min_interval_s`` 秒内不重复发送，防止抖动期间刷屏 webhook。
 """
 from __future__ import annotations
 
@@ -17,8 +26,9 @@ import logging
 import os
 import time
 import urllib.parse
-from dataclasses import dataclass
-from typing import Iterable, List, Protocol
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, field
+from typing import Any, Dict, Iterable, List, Optional, Protocol, Tuple, TypedDict
 
 import requests
 
@@ -32,6 +42,26 @@ class Channel(Protocol):
     name: str
     def notify_down(self, host: Host) -> None: ...
     def notify_recover(self, host: Host) -> None: ...
+
+
+# 通知配置 TypedDict：让 ``Notifier.from_config`` 的字段名拼错能在静态检查
+# 时被 mypy 抓到（运行时仍然兼容，因为是 ``**dict`` 解包到 dataclass，
+# 拼错的字段会被 dataclass __init__ 抛 TypeError 然后被吞）。
+class DingTalkConfig(TypedDict, total=False):
+    type: str          # 固定为 "dingtalk"
+    webhook_url: str
+    secret: str
+    at_mobiles: List[str]
+    at_all: bool
+    timeout: float
+
+
+class NotifyConfig(TypedDict, total=False):
+    enabled: bool
+    channels: List[Dict[str, Any]]
+    async_dispatch: bool
+    max_workers: int
+    min_interval_s: float
 
 
 # ---------------------------------------------------------------------------
@@ -55,13 +85,11 @@ class DingTalkChannel:
     """钉钉自定义机器人 Webhook 渠道。"""
     webhook_url: str = ""                    # 也可走 DINGTALK_WEBHOOK 环境变量
     secret: str = ""                         # 可选：机器人开启加签时必须填
-    at_mobiles: List[str] = None             # type: ignore[assignment]
+    at_mobiles: List[str] = field(default_factory=list)
     at_all: bool = False
     timeout: float = 5.0
 
     def __post_init__(self) -> None:
-        if self.at_mobiles is None:
-            self.at_mobiles = []
         # 允许通过环境变量覆盖 Webhook
         self.webhook_url = (
             self.webhook_url
@@ -171,21 +199,50 @@ _CHANNELS = {
 # ---------------------------------------------------------------------------
 
 
-class Notifier:
-    """把通知事件分发给所有已配置渠道，单个渠道失败不影响其他渠道。"""
+_KIND_DOWN = "down"
+_KIND_RECOVER = "recover"
 
-    def __init__(self, channels: Iterable[Channel]):
+
+class Notifier:
+    """把通知事件分发给所有已配置渠道，单个渠道失败不影响其他渠道。
+
+    默认用 ``ThreadPoolExecutor`` 异步派发，避免钉钉等 webhook 慢响应
+    阻塞主检测循环（100 台同时 DOWN 也不会让 fping 卡住）。测试或本地
+    调试可显式传 ``async_dispatch=False``。
+
+    防抖：``min_interval_s`` 控制同一 ``(channel, host, kind)`` 的最小
+    重发间隔，防止抖动期间重复刷屏。
+    """
+
+    def __init__(self, channels: Iterable[Channel], *,
+                 async_dispatch: bool = True,
+                 max_workers: int = 4,
+                 min_interval_s: float = 0.0):
         self.channels: List[Channel] = list(channels)
+        self.async_dispatch = async_dispatch
+        self.min_interval_s = float(min_interval_s)
+        self._last_sent: Dict[Tuple[str, str, str], float] = {}
+        self._executor: Optional[ThreadPoolExecutor] = None
+        if async_dispatch and self.channels:
+            self._executor = ThreadPoolExecutor(
+                max_workers=max(1, max_workers),
+                thread_name_prefix="fping-notifier",
+            )
 
     @classmethod
-    def from_config(cls, cfg: dict) -> "Notifier":
+    def from_config(cls, cfg: NotifyConfig) -> "Notifier":
         """根据 YAML 配置构建 Notifier。
 
-        行为：
-            * ``enabled: false`` → 返回空 Notifier
-            * 未知 type → 记 warning 并跳过
-            * 渠道构造抛 ``NotImplementedError`` → 记 warning 并跳过
-            * 渠道构造抛其他异常 → 记 error 并跳过
+        配置项：
+            * ``enabled`` — false 时返回空 Notifier
+            * ``async_dispatch`` — 默认 true（生产推荐异步派发）
+            * ``max_workers`` — 默认 4
+            * ``min_interval_s`` — 默认 0（关闭防抖）
+
+        渠道构造异常处理：
+            * ``NotImplementedError`` → warning 并跳过（占位渠道）
+            * ``TypeError`` → error 并跳过（字段名错）
+            * 未知 ``type`` → warning 并跳过
         """
         if not cfg.get("enabled", False):
             return cls(channels=[])
@@ -204,22 +261,69 @@ class Notifier:
             except TypeError as e:
                 log.error("渠道配置非法",
                           extra={"channel": ctype, "error": str(e)})
-        return cls(channels=channels)
+        return cls(
+            channels=channels,
+            async_dispatch=bool(cfg.get("async_dispatch", True)),
+            max_workers=int(cfg.get("max_workers", 4)),
+            min_interval_s=float(cfg.get("min_interval_s", 0.0)),
+        )
+
+    # ---- 公开 API --------------------------------------------------------
 
     def notify_down(self, host: Host) -> None:
-        for ch in self.channels:
-            try:
-                ch.notify_down(host)
-            except Exception as e:                       # noqa: BLE001
-                log.exception("通过渠道发送 DOWN 失败",
-                              extra={"channel": ch.name, "host": host.name,
-                                     "error": str(e)})
+        self._dispatch(host, _KIND_DOWN)
 
     def notify_recover(self, host: Host) -> None:
+        self._dispatch(host, _KIND_RECOVER)
+
+    def close(self, *, wait: bool = True) -> None:
+        """关闭后台线程池。daemon 退出前应调用，保证 webhook 发送完成。"""
+        if self._executor is not None:
+            self._executor.shutdown(wait=wait)
+            self._executor = None
+
+    # ---- 内部 ------------------------------------------------------------
+
+    def _dispatch(self, host: Host, kind: str) -> None:
+        method_name = "notify_down" if kind == _KIND_DOWN else "notify_recover"
         for ch in self.channels:
-            try:
-                ch.notify_recover(host)
-            except Exception as e:                       # noqa: BLE001
-                log.exception("通过渠道发送 RECOVER 失败",
-                              extra={"channel": ch.name, "host": host.name,
-                                     "error": str(e)})
+            if not self._allow_send(ch, host, kind):
+                continue
+            method = getattr(ch, method_name)
+            if self._executor is not None:
+                self._executor.submit(self._safe_call, ch, method, host, kind)
+            else:
+                self._safe_call(ch, method, host, kind)
+
+    def _allow_send(self, ch: Channel, host: Host, kind: str) -> bool:
+        """防抖：min_interval_s>0 时同一 (channel, host, kind) 不重复发。
+
+        首次发送不受窗口限制（monotonic 在进程刚启动时是 ~0，
+        用 0 当 sentinel 会误判；用对象存在性做哨兵更稳）。
+        """
+        if self.min_interval_s <= 0:
+            return True
+        key = (ch.name, host.name, kind)
+        last = self._last_sent.get(key)
+        now = time.monotonic()
+        if last is not None and now - last < self.min_interval_s:
+            log.debug(
+                "通知被防抖跳过",
+                extra={"channel": ch.name, "host": host.name,
+                       "kind": kind, "min_interval_s": self.min_interval_s,
+                       "since_last_s": round(now - last, 2)},
+            )
+            return False
+        self._last_sent[key] = now
+        return True
+
+    @staticmethod
+    def _safe_call(ch: Channel, method, host: Host, kind: str) -> None:
+        try:
+            method(host)
+        except Exception as e:                       # noqa: BLE001
+            log.exception(
+                "通过渠道发送通知失败",
+                extra={"channel": ch.name, "host": host.name,
+                       "kind": kind, "error": str(e)},
+            )

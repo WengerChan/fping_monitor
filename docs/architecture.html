@@ -166,8 +166,9 @@
     <div class="modules">
       <div class="mod">
         <h4>入口 · monitor.py</h4>
-        <p>解析 --config/--servers，加载配置 + 初始化日志，进入常驻循环。</p>
-        <div class="file-tag">~100 行，单函数 run_daemon</div>
+        <p>解析 <code>--config</code>（顶层）+ <code>--servers</code>（run 子命令专属），
+           默认子命令是 <code>run</code>；加载配置 + 初始化日志，进入常驻循环。</p>
+        <div class="file-tag">build_detector / build_notifier / run_daemon</div>
       </div>
       <div class="mod amber">
         <h4>调度 · scheduler.py</h4>
@@ -181,7 +182,9 @@
       </div>
       <div class="mod">
         <h4>通知 · notifier.py</h4>
-        <p>统一 notify_down/recover，分发到所有 Channel，单渠道失败不影响其他。</p>
+        <p>统一 <code>notify_down/recover</code>。默认 <strong>异步派发</strong>
+           （ThreadPoolExecutor，webhook 不阻塞 fping 循环）+ <strong>防抖</strong>
+           （<code>min_interval_s</code> 控制同一 host 不刷屏）。</p>
         <div class="file-tag">Notifier · DingTalk · Cuckoo 占位</div>
       </div>
       <div class="mod amber">
@@ -212,6 +215,7 @@ flowchart LR
   SM["StateMachine._advance()"]:::core
   DB[("SQLite<br/>hosts / events")]:::store
   NT["Notifier.notify_down<br/>notify_recover"]:::not
+  EX["ThreadPoolExecutor<br/>max_workers=4"]:::executor
   DT["DingTalkChannel<br/>POST + 加签"]:::ext
   CK["CuckooChannel<br/>占位（待实现）"]:::ext
 
@@ -224,8 +228,19 @@ flowchart LR
   SCH -- "list / update" --> DB
   SM -- "fired?" --> DB
   SM -- "fired + 非 UNKNOWN" --> NT
-  NT --> DT
-  NT -.占位.-> CK
+  NT -- "submit(POST)" --> EX
+  EX --> DT
+  EX -.占位.-> CK
+
+  classDef entry fill:#fbfaf6,stroke:#2f6f5e,color:#14171e
+  classDef cfg   fill:#f1e3d3,stroke:#c97b3f,color:#14171e
+  classDef core  fill:#d6e7e0,stroke:#2f6f5e,color:#14171e
+  classDef det   fill:#efdede,stroke:#b06367,color:#14171e
+  classDef sys   fill:#fbfaf6,stroke:#7c7a72,color:#14171e
+  classDef store fill:#e9e3d6,stroke:#7c7a72,color:#14171e
+  classDef not   fill:#f1e3d3,stroke:#c97b3f,color:#14171e
+  classDef executor fill:#e9e3d6,stroke:#7c7a72,color:#14171e,stroke-dasharray:4 3
+  classDef ext   fill:#fbfaf6,stroke:#7c7a72,color:#14171e,stroke-dasharray:4 3
 
   classDef entry fill:#fbfaf6,stroke:#2f6f5e,color:#14171e
   classDef cfg   fill:#f1e3d3,stroke:#c97b3f,color:#14171e
@@ -238,9 +253,10 @@ flowchart LR
       </pre>
     </div>
     <p class="callout">
-      <strong>两个不变式</strong>：Detector 只输出 <code>{name: bool}</code>，StateMachine
-      不知道 fping 存在；Notifier 只接收 <code>Host</code>（含 tags），StateMachine
-      不知道有钉钉。中间两层就是扩展点。
+      <strong>三个不变式</strong>：Detector 只输出 <code>{name: bool}</code>，
+      StateMachine 不知道 fping 存在；Notifier 只接收 <code>Host</code>（含 tags），
+      StateMachine 不知道有钉钉；Channel 不知道有 ThreadPoolExecutor，
+      同步 / 异步切换由 Notifier 单独决定。中间两层都是扩展点。
     </p>
   </section>
 
@@ -259,6 +275,7 @@ sequenceDiagram
   participant FP as fping
   participant SM as StateMachine
   participant NT as Notifier
+  participant EX as ThreadPoolExecutor
   participant DT as DingTalkChannel
 
   MON->>SCH: run_once()
@@ -275,13 +292,25 @@ sequenceDiagram
     alt fired AND 旧状态非 UNKNOWN
       SM->>DB: insert_event(...)
       SM->>NT: notify_down/recover(host)
-      NT->>DT: notify_down/recover(host)
-      DT->>DT: requests.post(webhook)
+      alt min_interval_s > 0 AND 同 (ch, host, kind) 在窗口内
+        NT-->>SM: 防抖跳过（debug 日志）
+      else
+        NT->>EX: submit(_safe_call, ...)
+        EX-->>NT: Future（立即返回）
+      end
+      par 后台线程
+        EX->>DT: notify_down/recover(host)
+        DT->>DT: requests.post(webhook)
+      end
     end
   end
   SM-->>SCH: CycleResult
   SCH-->>MON: CycleResult
   MON-->>MON: sleep(interval) 继续下一轮
+
+  Note over MON,DB: SIGTERM 触发优雅退出
+  MON->>EX: notifier.close(wait=True)  # join 线程池
+  MON->>DB: db.close()                  # 长连接落盘
       </pre>
     </div>
   </section>
@@ -327,8 +356,11 @@ stateDiagram-v2
 <span style="color:var(--muted)">// 收到 SIGHUP 信号</span>
 {"ts":"2026-07-17T09:16:51+00:00","level":"INFO","logger":"fping_monitor","message":"收到 SIGHUP，强制重载配置","signal":"SIGHUP"}
 
-<span style="color:var(--muted)">// 每轮检测结果</span>
+<span style="color:var(--muted)">// 每轮检测结果（主机数 ≤ 200：全量 results）</span>
 {"ts":"2026-07-17T09:16:51+00:00","level":"INFO","logger":"fping_monitor","message":"检测结果","event":"detection","results":{"gw":true,"dns8":false}}
+
+<span style="color:var(--muted)">// 主机数 > 200：抽样（避免单行 JSON 超 Logstash / Kafka 上限）</span>
+{"ts":"...","event":"detection","attempted":1500,"reachable":1498,"results_truncated":true,"results_sample":{"web-10.1.2.1":false,"web-10.1.2.2":false,"web-10.1.2.3":false,"sample":"down 全留 + up 抽 20"}}
 
 <span style="color:var(--muted)">// 状态机跃迁</span>
 {"ts":"2026-07-17T09:16:51+00:00","level":"INFO","logger":"fping_monitor","message":"状态变更","event":"state_change","host":"gw","ip":"192.168.1.1","tags":["network","infra"],"from_status":"UP","to_status":"DOWN","fired_kind":"DOWN"}
@@ -381,9 +413,13 @@ flowchart LR
   M["每轮开头 stat() 两个文件"]:::core
   CH{变了?}:::dec
   R1["重建 Detector<br/>重建 Notifier<br/>重建 StateMachine"]:::core
-  R2["upsert_hosts()<br/>同步主机到 SQLite"]:::core
+  R2["upsert_hosts()<br/>同步新主机到 SQLite"]:::core
+  R3["delete_hosts(差集)<br/>YAML 中移除的主机<br/>自动清理"]:::core
+  YAMLE["YAML 解析失败"]:::err
+  SAFE["保留旧 cfg<br/>error 日志<br/>下一轮再试"]:::err
   SIG["SIGHUP"]:::ext
   FR["force=True<br/>无视 mtime 重读"]:::core
+  CLEAN["SIGTERM 触发:<br/>notifier.close(wait)<br/>db.close()"]:::shut
 
   Y1 --> W
   Y2 --> W
@@ -391,24 +427,34 @@ flowchart LR
   M --> CH
   CH -- config --> R1
   CH -- servers --> R2
+  CH -- servers --> R3
   CH -- 两个都变 --> R1
   CH -- 两个都变 --> R2
+  CH -- 两个都变 --> R3
   CH -- 没变 --> X[跳过]:::muted
+  W -.解析失败.-> YAMLE
+  YAMLE --> SAFE
   SIG --> FR
   FR --> R1
   FR --> R2
+  FR --> R3
 
   classDef cfg    fill:#f1e3d3,stroke:#c97b3f,color:#14171e
   classDef core   fill:#d6e7e0,stroke:#2f6f5e,color:#14171e
   classDef dec    fill:#fbfaf6,stroke:#7c7a72,color:#14171e
   classDef ext    fill:#fbfaf6,stroke:#7c7a72,color:#14171e,stroke-dasharray:4 3
   classDef muted  fill:#f7f5f0,stroke:#e9e3d6,color:#7c7a72
+  classDef err    fill:#efdede,stroke:#b06367,color:#14171e
+  classDef shut   fill:#e9e3d6,stroke:#7c7a72,color:#14171e
       </pre>
     </div>
     <p class="callout amber">
       <strong>热加载范围</strong>：<code>interval</code>、阈值、<code>fping.*</code>、
       <code>notify.channels</code>、<code>logging.level</code>、<code>server.yaml</code> 的
       <code>hosts</code> 全部支持。唯独 <code>database</code> 路径不支持（连接在启动时建立）。
+      <strong>容错</strong>：YAML 解析失败时保留旧配置 + 旧 mtime，下一轮再重试，
+      daemon 不会被错误的配置 kill。从 <code>server.yaml</code> 移除的主机会被
+      <code>Database.delete_hosts</code> 自动清理（连带 events 表里的历史）。
     </p>
   </section>
 
@@ -484,15 +530,17 @@ fping-monitor/
 │   ├── server.yaml         <span style="color:var(--muted)"># 跟踪版本：主机列表</span>
 │   ├── server-prod.yaml    <span style="color:var(--muted)"># 可选：按环境拆分（dev / staging / prod）</span>
 │   └── server.local.yaml   <span style="color:var(--muted)"># 可选：本地覆盖（.gitignore 已屏蔽）</span>
-├── state.db                <span style="color:var(--muted)"># bind mount，持久化</span>
-└── logs/                   <span style="color:var(--muted)"># bind mount，持久化</span>
+├── data/                   <span style="color:var(--muted)"># bind mount，SQLite 持久化</span>
+│   └── state.db            <span style="color:var(--muted)"># 状态库（hosts / events）</span>
+└── logs/                   <span style="color:var(--muted)"># bind mount，日志</span>
 </pre>
 <pre style="margin-top:14px; font-family:'JetBrains Mono',monospace; font-size:12.5px; line-height:1.55; color:var(--ink); background:transparent; white-space:pre;">
 <span style="color:var(--muted)"># docker-compose.yml</span>
 volumes:
   - ./conf:/app/conf:ro        <span style="color:var(--muted)"># 整个目录挂进去</span>
-  - ./state.db:/app/state.db
-  - ./logs:/app/logs
+  - ./data:/app/data           <span style="color:var(--muted)"># SQLite 数据</span>
+  - ./logs:/app/logs           <span style="color:var(--muted)"># 日志</span>
+  <span style="color:var(--muted)"># 非 root 用户运行需要把 host 目录 chown 给 10001:10001</span>
 
 <span style="color:var(--muted)"># 切换到不同环境</span>
 docker compose run --rm monitor --servers conf/server-prod.yaml
@@ -511,22 +559,24 @@ cp conf/server.yaml conf/server.local.yaml
   <!-- 6. 文件清单 -->
   <section>
     <h3>06 · 源码清单</h3>
-    <h2 class="serif">整个项目 13 个文件</h2>
+    <h2 class="serif">整个项目 8 个 Python 模块 + 配置 / 容器 / CI</h2>
     <div class="card">
       <div class="files">
-        <div class="file"><div class="n">monitor.py</div><div class="r">入口：参数解析 + run_daemon 循环</div></div>
-        <div class="file"><div class="n">scheduler.py</div><div class="r">Scheduler.run_once + StateMachine 纯函数</div></div>
-        <div class="file"><div class="n">detector.py</div><div class="r">Detector 协议 + FpingDetector 实现</div></div>
-        <div class="file"><div class="n">notifier.py</div><div class="r">Notifier + DingTalkChannel + CuckooChannel 占位</div></div>
-        <div class="file"><div class="n">database.py</div><div class="r">SQLite 封装 + tags 编解码 + IP 简写展开入库</div></div>
+        <div class="file"><div class="n">monitor.py</div><div class="r">入口：参数解析 / build_detector / build_notifier / run_daemon / 健康检查</div></div>
+        <div class="file"><div class="n">scheduler.py</div><div class="r">Scheduler.run_once + StateMachine 纯函数 + 日志体积保护</div></div>
+        <div class="file"><div class="n">detector.py</div><div class="r">FpingDetector：单次批检 + 超时计算</div></div>
+        <div class="file"><div class="n">notifier.py</div><div class="r">Notifier + 异步 ThreadPoolExecutor 派发 + 防抖 + DingTalkChannel</div></div>
+        <div class="file"><div class="n">database.py</div><div class="r">SQLite + user_version 缓存 + 长连接 + delete_hosts + tags 编解码</div></div>
         <div class="file"><div class="n">models.py</div><div class="r">Host (含 tags) / Event / 枚举</div></div>
-        <div class="file"><div class="n">util.py</div><div class="r">YAML 加载、日志、fping 解析、ConfigWatcher、IP 简写展开</div></div>
-        <div class="file"><div class="n">conf/config.yaml</div><div class="r">全局配置：interval / 阈值 / fping / 通知</div></div>
-        <div class="file"><div class="n">conf/server.yaml</div><div class="r">主机列表（name / ip / tags）</div></div>
-        <div class="file"><div class="n">sql/schema.sql</div><div class="r">DDL：hosts（含 tags）、events 两张表</div></div>
-        <div class="file"><div class="n">Dockerfile</div><div class="r">python:3.11-slim + fping，CMD python monitor.py</div></div>
-        <div class="file"><div class="n">docker-compose.yml</div><div class="r">单目录挂载 conf/、state.db、logs/，env 注入 webhook</div></div>
-        <div class="file"><div class="n">Makefile</div><div class="r">install / test / docker / docker-up / docker-down / clean</div></div>
+        <div class="file"><div class="n">util.py</div><div class="r">YAML 加载 / 日志初始化 / fping 解析 / ConfigWatcher / IP 简写展开</div></div>
+        <div class="file"><div class="n">pyproject.toml</div><div class="r">项目元数据 + pytest + mypy + coverage 配置</div></div>
+        <div class="file"><div class="n">conf/config.yaml</div><div class="r">全局配置：interval / 阈值 / fping / notify / logging</div></div>
+        <div class="file"><div class="n">conf/server.yaml</div><div class="r">主机列表（name / ip / tags），支持 CIDR / 范围 / list 简写</div></div>
+        <div class="file"><div class="n">sql/schema.sql</div><div class="r">DDL：WAL + synchronous=NORMAL，hosts / events 两表</div></div>
+        <div class="file"><div class="n">Dockerfile</div><div class="r">python:3.11.10-slim + fping，非 root 用户 (UID 10001)</div></div>
+        <div class="file"><div class="n">docker-compose.yml</div><div class="r">单目录挂载 conf/ + data/ + logs/，env 注入 webhook</div></div>
+        <div class="file"><div class="n">Makefile</div><div class="r">install / dev / test / test-cov / lint / typecheck / docker*</div></div>
+        <div class="file"><div class="n">.github/workflows/ci.yml</div><div class="r">pytest 矩阵（3.11/3.12/3.13） + mypy 类型检查</div></div>
         <div class="file"><div class="n">README.md / README.cn.md</div><div class="r">中英两份使用说明</div></div>
       </div>
     </div>
@@ -571,12 +621,34 @@ cp conf/server.yaml conf/server.local.yaml
           <td>在 <code>run_daemon</code> 变更分支里读 <code>watcher.cfg</code> 并重建对应组件</td>
           <td>monitor.py</td>
         </tr>
+        <tr>
+          <td>调整防抖窗口</td>
+          <td>调 <code>notify.min_interval_s</code>（0=关闭）；同 (ch,host,kind) 在窗口内不重复发</td>
+          <td>config.yaml → notify.min_interval_s</td>
+        </tr>
+        <tr>
+          <td>同步 vs 异步派发</td>
+          <td><code>notify.async_dispatch: false</code> 切回同步（测试 / 调试）</td>
+          <td>config.yaml → notify.async_dispatch</td>
+        </tr>
+        <tr>
+          <td>Channel 配置字段校验</td>
+          <td>给新 Channel 在 notifier.py 里加一个 <code>TypedDict</code>，<code>from_config</code> 静态检查拼写错</td>
+          <td>notifier.py</td>
+        </tr>
+        <tr>
+          <td>schema 升级</td>
+          <td>改 <code>sql/schema.sql</code> 同时 bump <code>Database._SCHEMA_VERSION</code>，幂等 DDL 可直接追加</td>
+          <td>sql/schema.sql + database.py</td>
+        </tr>
       </tbody>
     </table>
     <p class="callout rose">
       <strong>不变量</strong>：新增的 Detector / Channel 只需要产出 / 接受
       <code>{name: bool}</code> 和 <code>Host</code>（含 tags）这两个稳定类型。
-      核心三件套（Scheduler / StateMachine / Database）保持原样。
+      核心三件套（Scheduler / StateMachine / Database）保持原样。Notifier
+      内部对 Channel 完全黑盒（同步 / 异步 / 防抖都在 Notifier 这一层决定），
+      Channel 本身不需要关心线程。
     </p>
   </section>
 

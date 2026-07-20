@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import List, Optional
 
@@ -56,5 +56,5 @@ class Event:
     id: Optional[int] = None
     host_id: int = 0
     event: EventType = EventType.DOWN
-    time: datetime = field(default_factory=datetime.utcnow)
+    time: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     message: str = ""

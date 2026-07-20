@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List
 
 from database import Database
@@ -21,6 +21,11 @@ from models import EventType, Host, HostStatus
 from notifier import Notifier
 
 log = logging.getLogger("fping_monitor.scheduler")
+
+# 单条 detection 日志的全量 results 上限；超过则降级为抽样。
+# 默认 200 兼顾可观测性（按 host 检索的能力）和日志体积安全。
+_LOG_RESULTS_INLINE_THRESHOLD = 200
+_LOG_RESULTS_SAMPLE_SIZE = 20
 
 
 @dataclass
@@ -46,7 +51,7 @@ class StateMachine:
 
     def step(self, alive: Dict[str, bool]) -> CycleResult:
         """对所有主机跑一轮状态机。"""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         changes: List[Dict] = []
         for host in self.db.list_hosts():
             old_status = host.status
@@ -146,15 +151,30 @@ class Scheduler:
         hosts = self.db.list_hosts()
         if not hosts:
             log.warning("没有配置主机，本轮跳过")
-            return CycleResult(timestamp=datetime.utcnow(),
+            return CycleResult(timestamp=datetime.now(timezone.utc),
                                results={}, changes=[])
         detect_result = self.detector.detect(hosts)
-        # 检测结果单独打一条 JSON，方便按 host 在 ES 里检索
-        log.info("检测结果",
-                 extra={"event": "detection",
-                        "fping_duration_ms": detect_result.duration_ms,
-                        "fping_returncode": detect_result.returncode,
-                        "attempted": detect_result.attempted,
-                        "reachable": detect_result.reachable,
-                        "results": detect_result.alive})
+        # 主机数大时 results 全量进日志会让单条 JSON 行膨胀到 KB 级，
+        # 超过 Logstash 默认 pipeline.batch.size / Kafka message.max.bytes。
+        # 阈值以上只打汇总 + 前 N 条抽样，全量留给 state_change 日志。
+        extra = {
+            "event": "detection",
+            "fping_duration_ms": detect_result.duration_ms,
+            "fping_returncode": detect_result.returncode,
+            "attempted": detect_result.attempted,
+            "reachable": detect_result.reachable,
+        }
+        host_count = len(detect_result.alive)
+        if host_count <= _LOG_RESULTS_INLINE_THRESHOLD:
+            extra["results"] = detect_result.alive
+        else:
+            # 抽样：down 主机全留（量小、有价值），up 主机抽前 N 条
+            down = {n: v for n, v in detect_result.alive.items() if not v}
+            up = [n for n, v in detect_result.alive.items() if v]
+            sample = dict(list(down.items()) +
+                          [(n, True) for n in up[:_LOG_RESULTS_SAMPLE_SIZE]])
+            extra["results_truncated"] = True
+            extra["results_sample"] = sample
+            extra["results_sample_size"] = len(sample)
+        log.info("检测结果", extra=extra)
         return self.sm.step(detect_result.alive)

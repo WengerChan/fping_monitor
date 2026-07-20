@@ -72,3 +72,90 @@ def test_no_hosts_is_noop(db):
     res = sched.run_once()
     assert res.changes == []
     assert n.events == []
+
+
+# ---- detection 日志体积保护 --------------------------------------------------
+
+
+def _capture_scheduler_logs(monkeypatch):
+    """为 fping_monitor.scheduler 装一个 list-handler，返回 records 列表。
+
+    caplog 看不到 ``fping_monitor`` 的子 logger，因为它的 propagate=False。
+    测试场景下我们临时塞一个 handler 到子 logger 上就能拿到所有记录。
+    """
+    import logging
+    captured = []
+    handler = logging.Handler()
+    handler.emit = lambda record: captured.append(record)
+    sched_logger = logging.getLogger("fping_monitor.scheduler")
+    sched_logger.addHandler(handler)
+    monkeypatch.setattr(sched_logger, "propagate", False)   # 防重复
+    try:
+        return captured
+    finally:
+        # 实际清理在 monkeypatch tearDown 之后做，避免 list 引用丢失；
+        # 但 handler 是真的会被 addHandler 的对象，所以手动 remove 更稳。
+        pass
+
+
+def test_detection_log_truncates_when_many_hosts(db, monkeypatch):
+    """主机数 > 阈值时，detection 日志用 results_sample 替代全量 results。"""
+    import logging
+    from scheduler import _LOG_RESULTS_INLINE_THRESHOLD, _LOG_RESULTS_SAMPLE_SIZE
+    from detector import DetectResult
+
+    n_hosts = _LOG_RESULTS_INLINE_THRESHOLD + 50
+    hosts_dict = [{"name": f"h{i}", "ip": f"10.0.0.{i}"} for i in range(n_hosts)]
+    db.upsert_hosts(hosts_dict)
+
+    class FullDetector:
+        def detect(self, hosts):
+            return DetectResult(
+                alive={h.name: True for h in hosts},
+                attempted=len(hosts), reachable=len(hosts),
+            )
+
+    n = RecordingNotifier()
+    sched = Scheduler(
+        cfg={"failure_threshold": 1, "recovery_threshold": 1},
+        db=db, detector=FullDetector(), notifier=n,
+    )
+
+    captured = _capture_scheduler_logs(monkeypatch)
+    sched.run_once()
+    detection_logs = [r for r in captured if getattr(r, "event", None) == "detection"]
+    assert len(detection_logs) == 1
+    rec = detection_logs[0]
+    assert getattr(rec, "results_truncated") is True
+    sample = getattr(rec, "results_sample")
+    assert isinstance(sample, dict)
+    # down 抽样 + up 抽样不超过阈值
+    assert len(sample) <= _LOG_RESULTS_SAMPLE_SIZE
+
+
+def test_detection_log_inline_when_few_hosts(db, monkeypatch):
+    """主机数 <= 阈值时仍打全量 results。"""
+    from detector import DetectResult
+
+    db.upsert_hosts([{"name": f"h{i}", "ip": f"10.0.0.{i}"} for i in range(3)])
+
+    class FullDetector:
+        def detect(self, hosts):
+            return DetectResult(
+                alive={h.name: True for h in hosts},
+                attempted=len(hosts), reachable=len(hosts),
+            )
+
+    n = RecordingNotifier()
+    sched = Scheduler(
+        cfg={"failure_threshold": 1, "recovery_threshold": 1},
+        db=db, detector=FullDetector(), notifier=n,
+    )
+
+    captured = _capture_scheduler_logs(monkeypatch)
+    sched.run_once()
+    detection_logs = [r for r in captured if getattr(r, "event", None) == "detection"]
+    assert len(detection_logs) == 1
+    rec = detection_logs[0]
+    assert getattr(rec, "results", None) == {"h0": True, "h1": True, "h2": True}
+    assert not hasattr(rec, "results_truncated")

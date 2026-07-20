@@ -29,6 +29,12 @@ healthcheck:
 
 notify:
   enabled: true
+  # 派发模式：默认异步（ThreadPoolExecutor），webhook 不会阻塞 fping 检测循环。
+  async_dispatch: true
+  max_workers: 4           # 异步派发时的线程池大小
+  # 防抖：同一 (channel, host, kind) 在 N 秒内不重复发送，0 = 关闭。
+  # 抖动场景推荐 60~300；过小可能丢失真实告警，过大可能漏报恢复。
+  min_interval_s: 0
   # 渠道列表；每个渠道实现 notify_down / notify_recover
   channels:
     - type: dingtalk

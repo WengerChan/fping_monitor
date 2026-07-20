@@ -61,7 +61,7 @@ fping-monitor 的所有重要改动按时间倒序记录。
 
 ### 测试
 
-- 87 个测试用例（5 个测试文件 + 1 conftest）：
+- 全模块覆盖测试（`make test` 跑整套，`pytest --collect-only -q` 看完整列表）；
   - `test_parser.py` — fping 输出解析
   - `test_database.py` — SQLite 增删改查 + tags 持久化
   - `test_state_machine.py` — 状态机全部转换路径
