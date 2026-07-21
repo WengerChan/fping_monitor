@@ -119,10 +119,13 @@
 
   /* 文件清单 */
   .files { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 14px; font-size: 14px; }
-  .file { display: grid; grid-template-columns: 130px 1fr; gap: 10px; padding: 6px 0; border-bottom: 1px dashed var(--line); }
+  /* 第一列 minmax(130px, max-content)：短文件名（如 monitor.py）固定 130px
+     排版整齐；长文件名（如 .github/workflows/ci.yml）自动扩到能放下，
+     并由 word-break 拆行，绝不和第二列描述重叠。 */
+  .file { display: grid; grid-template-columns: minmax(130px, max-content) 1fr; gap: 10px 14px; padding: 6px 0; border-bottom: 1px dashed var(--line); align-items: baseline; }
   .file:last-child, .file:nth-last-child(2) { border-bottom: 0; }
-  .file .n { font-family: 'JetBrains Mono', monospace; font-size: 12.5px; color: var(--primary); }
-  .file .r { color: var(--ink-2); font-size: 13px; }
+  .file .n { font-family: 'JetBrains Mono', monospace; font-size: 12.5px; color: var(--primary); word-break: break-all; }
+  .file .r { color: var(--ink-2); font-size: 13px; min-width: 0; }
 
   footer {
     margin-top: 64px; padding-top: 20px; border-top: 1px solid var(--line);
