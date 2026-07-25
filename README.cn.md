@@ -266,15 +266,15 @@ hosts:
 
 ## 健康检查（docker HEALTHCHECK）
 
-容器内置 HEALTHCHECK，命令是：
+容器内置 HEALTHCHECK，调项目根目录下的独立脚本 `healthcheck.py`：
 
 ```bash
-python monitor.py healthcheck
+python healthcheck.py
 ```
 
 只做两件事：
 
-1. 打开 SQLite 数据库，读出主机列表
+1. 打开 SQLite 数据库，执行 `SELECT 1`
 2. 用 fping 探一次 `healthcheck.gateway`（默认 `1.1.1.1`）
 
 退出码 `0` = 健康，`1` = 不健康。`docker compose ps` 状态栏直接显示，
@@ -283,9 +283,11 @@ python monitor.py healthcheck
 `healthcheck.gateway` 只是个可达性烟测地址，可以改成你信任的任意地址
 （路由器、内网 VIP 等）。
 
-> `healthcheck` 子命令是**全项目唯一**允许使用 `print()` 的地方。其他
+> `healthcheck.py` 是**全项目唯一**允许使用 `print()` 的地方。其他
 > 模块一律走结构化 logging，方便直接送 Logstash / ELK。这里必须用 print
 > 是 docker HEALTHCHECK 的契约要求：返回退出码 + stderr 详情。
+> 脚本刻意不依赖 `monitor.py` / `database.py` 等项目模块，独立运行，
+> 这样 HEALTHCHECK 链路不会被主进程运行时状态影响。
 
 ## 测试
 

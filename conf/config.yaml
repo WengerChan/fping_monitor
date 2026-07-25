@@ -22,7 +22,7 @@ logging:
   backup_days: 14
   format: json                # json（logstash json_lines）/ text（人类可读）
 
-# 健康检查：docker HEALTHCHECK / k8s readinessProbe 调 `python monitor.py healthcheck`
+# 健康检查：docker HEALTHCHECK 调 `python healthcheck.py`。
 # gateway 是 fping 探活的烟测地址，fping 能 ping 通它代表 fping 工具链 + 网络都 OK
 healthcheck:
   gateway: 1.1.1.1            # Cloudflare DNS，公共可达

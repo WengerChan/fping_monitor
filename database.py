@@ -94,7 +94,7 @@ class Database:
             * 已建库但版本不匹配 → 执行 schema.sql（DDL 自身应是幂等的
               ``IF NOT EXISTS``），再覆盖版本号
 
-        这样 healthcheck 每 30s 跑一次也不会重复 IO。
+        这样频繁调用（例如配置热加载触发重建 Database）也不会重复 IO。
         """
         if not SCHEMA_FILE.exists():
             raise FileNotFoundError(f"找不到 schema 文件：{SCHEMA_FILE}")

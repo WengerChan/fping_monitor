@@ -2,7 +2,18 @@
 
 fping-monitor 的所有重要改动按时间倒序记录。
 
-## [unreleased] · 2026-07-17
+## [unreleased] · 2026-07-25
+
+### Refactored
+
+- **健康检查改为独立 `healthcheck.py` 脚本**：原来 `python monitor.py
+  healthcheck` 子命令从 `monitor.py` 中剥离出来，做成项目根目录下的
+  独立脚本。`Dockerfile` 的 `HEALTHCHECK` 指令现在直接调用
+  `python healthcheck.py`，不依赖 `monitor.py` 的 import / 配置热加载
+  / 日志初始化链路。`monitor.py` CLI 简化为单进程长驻主循环（仅
+  `--config` / `--servers` 两个参数）。脚本检查 SQLite 连通性 +
+  fping 探活 `healthcheck.gateway`（默认 `1.1.1.1`），0/1 退出码 + stderr
+  失败原因，行为与原实现一致。
 
 ### 重构
 

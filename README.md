@@ -274,15 +274,16 @@ but the channel is skipped until you implement it.
 
 ## Health check (docker HEALTHCHECK)
 
-The container has a built-in `HEALTHCHECK` that runs
+The container has a built-in `HEALTHCHECK` that runs the standalone
+`healthcheck.py` script:
 
 ```bash
-python monitor.py healthcheck
+python healthcheck.py
 ```
 
 It does exactly two things:
 
-1. Opens the SQLite database and reads the host list
+1. Opens the SQLite database and runs `SELECT 1`
 2. Runs `fping` once against `healthcheck.gateway` (default `1.1.1.1`)
 
 Exit code `0` = healthy, `1` = unhealthy. With `docker compose ps` you
@@ -291,10 +292,13 @@ see the status; with `docker inspect` you get the full output.
 The gateway field is just a reachability smoke test — change it to
 whatever address you trust to be up (your router, an internal VIP, etc.).
 
-> The `healthcheck` subcommand is the **only** place in the codebase that
-> uses `print()`. Everywhere else uses the structured logger so logs are
+> `healthcheck.py` is the **only** place in the codebase that uses
+> `print()`. Everywhere else uses the structured logger so logs are
 > shippable to Logstash / ELK without parsing. `print` here is required
 > by the docker HEALTHCHECK contract (exit code + stderr detail).
+> The script is intentionally standalone (no imports from
+> `monitor.py` / `database.py` / etc.) so the HEALTHCHECK chain does
+> not depend on the main process's runtime state.
 
 ## Tests
 

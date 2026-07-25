@@ -500,25 +500,28 @@ web-10.1.2.14  10.1.2.14  [web, prod]
   <!-- 5.8 健康检查 -->
   <section>
     <h3>05.8 · 健康检查（docker HEALTHCHECK）</h3>
-    <h2 class="serif">CLI 子命令，0/1 退出码，两项检查</h2>
+    <h2 class="serif">独立脚本，0/1 退出码，两项检查</h2>
 <pre style="margin:0; font-family:'JetBrains Mono',monospace; font-size:12.5px; line-height:1.55; color:var(--ink); background:transparent; white-space:pre;">
 <span style="color:var(--muted)"># Dockerfile</span>
 HEALTHCHECK --start-period=30s --interval=30s --timeout=10s --retries=3 \
-    CMD ["python", "monitor.py", "healthcheck"]
+    CMD ["python", "healthcheck.py"]
 
-<span style="color:var(--muted)"># monitor.py:run_healthcheck() 的两项检查</span>
-1. <span style="color:var(--primary)">Database(db_path).list_hosts()</span>     <span style="color:var(--muted)"># 验证 SQLite 可达</span>
-2. <span style="color:var(--primary)">FpingDetector().detect([Host(gateway)])</span>  <span style="color:var(--muted)"># 验证 fping 工具链</span>
+<span style="color:var(--muted)"># healthcheck.py 的两项检查</span>
+1. <span style="color:var(--primary)">sqlite3.connect(db_path).execute("SELECT 1")</span>  <span style="color:var(--muted)"># 验证 SQLite 可达</span>
+2. <span style="color:var(--primary)">subprocess.run(["fping","-C1","-t500", gateway])</span> <span style="color:var(--muted)"># 验证 fping 工具链 + 网络</span>
 
 <span style="color:var(--muted)"># 烟测地址</span>
 healthcheck:
   gateway: 1.1.1.1            <span style="color:var(--muted)"># Cloudflare DNS，改成内网 VIP 也行</span>
 </pre>
     <p class="callout amber">
-      <strong>设计选择</strong>：没用 HTTP server（之前是 9090 端口跑
-      <code>/health</code> + <code>/ready</code> + <code>/status</code>）——
-      对 docker HEALTHCHECK 来说太重。CLI 子命令单进程、零依赖、stderr
-      输出失败原因，<code>docker inspect</code> 看得见。
+      <strong>设计选择</strong>：脚本刻意不依赖 <code>monitor.py</code> /
+      <code>database.py</code> 等项目内部模块，直接调 <code>sqlite3</code>
+      标准库 + <code>subprocess</code> 跑 <code>fping</code>。
+      单进程、零项目内 import 链、毫秒级启动——
+      HEALTHCHECK 链路不耦合主进程的运行时状态，主进程异常时
+      HEALTHCHECK 仍能给出独立判断（fping 还在不在、SQLite 文件
+      还能不能开）。
     </p>
   </section>
 
@@ -565,7 +568,8 @@ cp conf/server.yaml conf/server.local.yaml
     <h2 class="serif">整个项目 8 个 Python 模块 + 配置 / 容器 / CI</h2>
     <div class="card">
       <div class="files">
-        <div class="file"><div class="n">monitor.py</div><div class="r">入口：参数解析 / build_detector / build_notifier / run_daemon / 健康检查</div></div>
+        <div class="file"><div class="n">monitor.py</div><div class="r">入口：参数解析 / build_detector / build_notifier / run_daemon</div></div>
+        <div class="file"><div class="n">healthcheck.py</div><div class="r">Docker HEALTHCHECK 独立脚本：SQLite + fping 烟测</div></div>
         <div class="file"><div class="n">scheduler.py</div><div class="r">Scheduler.run_once + StateMachine 纯函数 + 日志体积保护</div></div>
         <div class="file"><div class="n">detector.py</div><div class="r">FpingDetector：单次批检 + 超时计算</div></div>
         <div class="file"><div class="n">notifier.py</div><div class="r">Notifier + 异步 ThreadPoolExecutor 派发 + 防抖 + DingTalkChannel</div></div>

@@ -1,13 +1,7 @@
 """进程入口。
 
-支持两个运行模式：
-
-  * ``python monitor.py``（默认）—— 长驻主循环
-  * ``python monitor.py healthcheck`` —— 一次性健康检查，0 表示健康
-
-健康检查内容（给 docker HEALTHCHECK 用）：
-    1. 能否打开 SQLite 数据库
-    2. fping 工具链是否可用（用 fping 探一次 config.healthcheck.gateway）
+启动 fping-monitor 的长驻主循环，监控 ``conf/server.yaml`` 里的主机，
+按 ``config.interval`` 周期跑 fping 检测并按状态机推进 / 通知。
 """
 from __future__ import annotations
 
@@ -20,7 +14,6 @@ from typing import Optional, Tuple, cast
 
 from database import Database
 from detector import FpingDetector
-from models import Host
 from notifier import NotifyConfig, Notifier
 from scheduler import Scheduler
 from util import ConfigWatcher, load_yaml, setup_logging
@@ -85,45 +78,6 @@ def init_logging_from_cfg(cfg: dict) -> None:
         backup_days=int(logging_cfg.get("backup_days", 14)),
         fmt=logging_cfg.get("format", "json"),
     )
-
-
-# ---------------------------------------------------------------------------
-# 健康检查：CLI 子命令形式，给 docker HEALTHCHECK 用
-# ---------------------------------------------------------------------------
-
-
-def run_healthcheck(cfg: dict) -> int:
-    """返回 0 = 健康，1 = 不健康。
-
-    检查项：
-        1. SQLite 能打开
-        2. fping 能探到 healthcheck.gateway 指定的地址
-    """
-    failures: list[str] = []
-
-    # 1) SQLite 连通性
-    try:
-        db_path = cfg.get("database", "state.db")
-        Database(db_path).list_hosts()           # 触发一次真实读写
-    except Exception as e:                        # noqa: BLE001
-        failures.append(f"db: {e}")
-
-    # 2) fping 探活
-    gateway = (cfg.get("healthcheck") or {}).get("gateway", "1.1.1.1")
-    try:
-        det = FpingDetector(timeout_ms=500, retry=0)
-        # 造一个临时 host 测一次，不入库
-        result = det.detect([Host(name="__hc__", ip=gateway)])
-        if not result.alive.get("__hc__"):
-            failures.append(f"fping: cannot reach {gateway}")
-    except Exception as e:                        # noqa: BLE001
-        failures.append(f"fping: {e}")
-
-    if failures:
-        print("UNHEALTHY: " + "; ".join(failures), file=sys.stderr)
-        return 1
-    print("OK")
-    return 0
 
 
 # ---------------------------------------------------------------------------
@@ -271,44 +225,26 @@ def run_daemon(config_path: str, servers_path: str) -> None:
 
 
 def main(argv: Optional[list] = None) -> None:
-    """CLI 入口：默认长驻；``healthcheck`` 子命令用于 docker HEALTHCHECK。"""
+    """CLI 入口：启动 fping-monitor 长驻主循环。"""
     parser = argparse.ArgumentParser(
         prog="fping_monitor",
         description="fping-monitor 长驻容器主程序，支持配置热加载。",
     )
     parser.add_argument("--config", default="conf/config.yaml",
                         help="全局配置文件路径")
-    # 注意：--servers 是 `run` 子命令专属参数，healthcheck 不读主机列表。
-    # 放在顶层是历史原因；保留兼容老调用方式。
-
-    sub = parser.add_subparsers(dest="cmd", required=False)
-    p_run = sub.add_parser("run", help="（默认）启动长驻主循环")
-    p_run.add_argument("--servers", default="conf/server.yaml",
-                       help="主机列表文件路径")
-    sub.add_parser("healthcheck", help="一次性健康检查，0=健康 1=不健康")
-    # 不带子命令时等价于 run
-    p_run.set_defaults(cmd="run")
+    parser.add_argument("--servers", default="conf/server.yaml",
+                        help="主机列表文件路径")
 
     args = parser.parse_args(argv)
-    if args.cmd is None:
-        # 顶层默认走 run；run 子解析器还没跑，所以 args.servers 不存在，补上。
-        args.cmd = "run"
-        args.servers = "conf/server.yaml"
 
-    cfg = load_yaml(args.config)
-
-    if args.cmd == "healthcheck":
-        sys.exit(run_healthcheck(cfg))
-
-    # run：启动前预检一次，避免配置写错时容器无限重启
+    # 启动前预检一次，避免配置写错时容器无限重启
     try:
         load_yaml(args.servers)
     except Exception as e:
         print(f"配置加载失败：{e}", file=sys.stderr)
         sys.exit(2)
 
-    servers = getattr(args, "servers", "conf/server.yaml")
-    run_daemon(args.config, servers)
+    run_daemon(args.config, args.servers)
 
 
 if __name__ == "__main__":
