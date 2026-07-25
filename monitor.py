@@ -16,12 +16,12 @@ import logging
 import signal
 import sys
 import time
-from typing import Optional, Tuple
+from typing import Optional, Tuple, cast
 
 from database import Database
 from detector import FpingDetector
 from models import Host
-from notifier import Notifier
+from notifier import NotifyConfig, Notifier
 from scheduler import Scheduler
 from util import ConfigWatcher, load_yaml, setup_logging
 
@@ -49,8 +49,14 @@ def build_detector(cfg: dict) -> FpingDetector:
 
 
 def build_notifier(cfg: dict) -> Notifier:
-    """根据 ``cfg.notify`` 构造 Notifier（含异步派发 / 防抖配置）。"""
-    return Notifier.from_config(cfg.get("notify", {}) or {})
+    """根据 ``cfg.notify`` 构造 Notifier（含异步派发 / 防抖配置）。
+
+    ``cfg`` 是从 YAML 解析出来的 ``dict``，运行时类型是 ``Any``。
+    这里 ``cast`` 到 ``NotifyConfig`` 仅给 mypy 一个承诺：传入的字段
+    形状合法。真正的字段校验在 ``Notifier.from_config`` 内部
+    （缺字段会让 dataclass ``__init__`` 抛 TypeError 然后被吞并 warning）。
+    """
+    return Notifier.from_config(cast(NotifyConfig, cfg.get("notify", {}) or {}))
 
 
 def build_scheduler(cfg: dict, db: Database,

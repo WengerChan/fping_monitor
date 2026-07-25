@@ -249,6 +249,10 @@ class Notifier:
         channels: List[Channel] = []
         for entry in cfg.get("channels", []):
             ctype = entry.get("type")
+            if ctype is None:
+                # 配置遗漏 type 字段，等同于未知渠道
+                log.warning("未知的通知渠道类型", extra={"channel": ctype})
+                continue
             cls_ = _CHANNELS.get(ctype)
             if cls_ is None:
                 log.warning("未知的通知渠道类型", extra={"channel": ctype})

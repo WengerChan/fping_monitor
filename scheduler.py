@@ -54,6 +54,11 @@ class StateMachine:
         now = datetime.now(timezone.utc)
         changes: List[Dict] = []
         for host in self.db.list_hosts():
+            # ``Host.id`` 类型上是 ``Optional[int]``（便于序列化），
+            # 但从 ``list_hosts()`` 读出来的行 id 必非 None（表里 id 是
+            # INTEGER PRIMARY KEY AUTOINCREMENT）。显式断言让 mypy 知道
+            # 后面用 ``host.id`` 当 ``int`` 是合法的。
+            assert host.id is not None
             old_status = host.status
             is_alive = bool(alive.get(host.name, False))
             new_status, fail_count, recover_count, fired = self._advance(

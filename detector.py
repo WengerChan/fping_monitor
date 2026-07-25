@@ -9,7 +9,7 @@ import shutil
 import subprocess
 import time
 from dataclasses import dataclass, field
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from models import Host
 from util import parse_fping_output
@@ -46,7 +46,7 @@ class FpingDetector:
     interval_ms: int = 10
     timeout_ms: int = 500
     retry: int = 0
-    extra: List[str] = None  # 透传给 fping 的额外参数
+    extra: Optional[List[str]] = None  # 透传给 fping 的额外参数
 
     def __post_init__(self) -> None:
         if self.extra is None:
