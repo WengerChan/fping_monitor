@@ -62,9 +62,14 @@ class Database:
         return self._open_connection()
 
     def _open_connection(self) -> sqlite3.Connection:
+        # 注意：PRAGMA journal_mode / synchronous 是 **连接级别** 的设置，
+        # 不会被持久化到 db 文件 header（foreign_keys 才会）。所以每次新
+        # 连接都要重新应用一遍，否则会掉回 SQLite 的默认值。
         conn = sqlite3.connect(self.path, timeout=10, isolation_level=None)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON")
+        conn.execute("PRAGMA journal_mode = WAL")
+        conn.execute("PRAGMA synchronous = NORMAL")
         return conn
 
     def close(self) -> None:
@@ -99,8 +104,8 @@ class Database:
             if current >= self._SCHEMA_VERSION:
                 return
             conn.executescript(SCHEMA_FILE.read_text(encoding="utf-8"))
-            # executescript 跑过整个文件，包含 ``PRAGMA user_version;`` 语句。
-            # 现在显式写入目标版本号（用占位符避开参数化限制）。
+            # schema.sql 只含 DDL，user_version 由 Python 代码统一管。
+            # 用占位符避开参数化限制（PRAGMA user_version 不接受 ? 占位符）。
             conn.execute(f"PRAGMA user_version = {self._SCHEMA_VERSION}")
 
     # ---- 主机表 ---------------------------------------------------------

@@ -18,21 +18,30 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install fping
-        run: sudo apt-get update && sudo apt-get install -y fping
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends fping
 
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-          cache: pip
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ matrix.python-version }}-${{ hashFiles('requirements-dev.txt', 'requirements.txt') }}
+          restore-keys: |
+            pip-${{ matrix.python-version }}-
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements-dev.txt
+          pip install --upgrade-strategy only-if-needed -r requirements-dev.txt
 
       - name: Run pytest
-        run: pytest -q
+        run: pytest -v
 
   typecheck:
     runs-on: ubuntu-latest
@@ -44,12 +53,19 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-          cache: pip
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-typecheck-${{ hashFiles('requirements-dev.txt', 'requirements.txt') }}
+          restore-keys: |
+            pip-typecheck-
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements-dev.txt
+          pip install --upgrade-strategy only-if-needed -r requirements-dev.txt
 
       - name: Run mypy
         run: mypy monitor.py scheduler.py detector.py notifier.py database.py models.py util.py

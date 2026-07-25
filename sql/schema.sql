@@ -2,14 +2,14 @@
 -- State values: UNKNOWN, UP, DOWN
 -- Event values: DOWN, RECOVER
 
--- WAL 模式 + NORMAL 同步：写性能优于 FULL，对崩溃一致性影响可控（最近
--- 一两次事务可能丢，但监控场景重跑一轮即可恢复）。
-PRAGMA journal_mode = WAL;
-PRAGMA synchronous = NORMAL;
-PRAGMA foreign_keys = ON;
+-- 注意：本文件只放 DDL。PRAGMA 设置（journal_mode / synchronous /
+-- foreign_keys）统一在 ``database.Database._open_connection`` 里应用，
+-- 每次新连接都会重新设置一次（这两个 PRAGMA 是连接级别的，不会写进
+-- db header），别在这里重复设，避免双源真理。
 
 -- 当前 schema 版本。启动时如果 user_version=0 才执行 DDL，并设成 1。
-PRAGMA user_version;
+-- ``PRAGMA user_version`` 由 ``database.Database._init_schema`` 直接
+-- 读取 / 写入，不依赖本文件。
 
 CREATE TABLE IF NOT EXISTS hosts (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
