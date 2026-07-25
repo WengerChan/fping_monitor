@@ -78,7 +78,7 @@ class FpingDetector:
             "-t", str(self.timeout_ms),   # 单次超时 (ms)
             "-C", str(self.count),        # 每台主机 ping 几次
             "-e",                         # 显示 RTT
-            *self.extra,
+            *(self.extra or []),
             *ips,
         ]
         log.debug("fping 命令：%s", " ".join(cmd))

@@ -1,27 +1,22 @@
 name: Docker Image
 
+# 只在打 ``v*.*.*`` 格式的 tag 时才会构建并推送镜像。
+# 镜像 tag = git tag 原样（如 ``v1.2.3``），同时会同步打一个 ``latest``。
+#
+# 使用：
+#   git tag v1.2.3
+#   git push origin v1.2.3
 on:
   push:
-    branches: [main]
     tags: ["v*.*.*"]
-  pull_request:
-    branches: [main]
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: "自定义镜像 tag（留空则用 short SHA）"
-        required: false
-        default: ""
 
 env:
-  # 阿里云容器镜像服务（个人版）默认域名；vars 优先，便于在仓库层改默认 region
+  # 阿里云容器镜像服务域名；vars 优先，便于在仓库层改默认 region
   REGISTRY: ${{ vars.ALIYUN_REGISTRY != '' && vars.ALIYUN_REGISTRY || secrets.ALIYUN_REGISTRY }}
   NAMESPACE: ${{ vars.ALIYUN_NAME_SPACE != '' && vars.ALIYUN_NAME_SPACE || secrets.ALIYUN_NAME_SPACE }}
 
 jobs:
   build:
-    # PR 上只验证 build 能跑通，不推镜像
-    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -39,38 +34,20 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Login to Aliyun Registry
-        # 个人版/企业版都用 docker login 即可，CR 会按账号自动路由
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ secrets.ALIYUN_REGISTRY_USER }}
           password: ${{ secrets.ALIYUN_REGISTRY_PASSWORD }}
 
-      - name: Extract metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/fping_monitor
-          tags: |
-            # 语义化版本 tag：v1.2.3 -> 1.2.3, 1.2, 1
-            type=semver,pattern=v{{version}}
-            type=semver,pattern=v{{major}}.{{minor}}
-            type=semver,pattern=v{{major}}
-            # 默认 short SHA，便于回溯
-            type=sha,prefix=
-            # main 分支额外打 latest
-            type=raw,value=latest,enable={{is_default_branch}}
-          flavor: |
-            latest=auto
-
-      - name: Apply manual tag override
-        id: manual-tag
-        if: github.event_name == 'workflow_dispatch' && github.event.inputs.tag != ''
+      - name: Resolve image name and tag
+        id: image
+        # tag push 事件里 ``github.ref_name`` 就是 tag 名称本身（如 ``v1.2.3``）。
+        # on.push.tags 已经限定只接受 ``v*.*.*``，这里无需再做格式检查。
         run: |
           {
-            echo "tags<<EOF"
-            echo "${{ env.REGISTRY }}/${{ env.NAMESPACE }}/fping_monitor:${{ github.event.inputs.tag }}"
-            echo "EOF"
+            echo "image=${{ env.REGISTRY }}/${{ env.NAMESPACE }}/fping_monitor"
+            echo "tag=${{ github.ref_name }}"
           } >> "$GITHUB_OUTPUT"
 
       - name: Build and push (multi-arch)
@@ -80,16 +57,25 @@ jobs:
           file: ./Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: ${{ steps.manual-tag.outputs.tags || steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          annotations: ${{ steps.meta.outputs.annotations }}
-          # 用 GitHub 容器注册表做层缓存，下次 build 显著加速
+          # 两个 tag：git tag 原样 + latest
+          # 不要 latest 就把第二行删掉
+          tags: |
+            ${{ steps.image.outputs.image }}:${{ steps.image.outputs.tag }}
+            ${{ steps.image.outputs.image }}:latest
+          labels: |
+            org.opencontainers.image.title=fping_monitor
+            org.opencontainers.image.version=${{ github.ref_name }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          # 用 GitHub Actions 自带缓存加速后续 build
           cache-from: type=gha,scope=${{ github.workflow }}
           cache-to: type=gha,mode=max,scope=${{ github.workflow }}
 
       - name: Image digest
         run: |
-          echo "### 镜像地址" >> "$GITHUB_STEP_SUMMARY"
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
-          echo "${{ steps.meta.outputs.tags }}" >> "$GITHUB_STEP_SUMMARY"
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "### 镜像地址"
+            echo
+            echo "- \`${{ steps.image.outputs.image }}:${{ steps.image.outputs.tag }}\`"
+            echo "- \`${{ steps.image.outputs.image }}:latest\`"
+          } >> "$GITHUB_STEP_SUMMARY"
