@@ -16,7 +16,7 @@ on:
 env:
   # 阿里云容器镜像服务（个人版）默认域名；vars 优先，便于在仓库层改默认 region
   REGISTRY: ${{ vars.ALIYUN_REGISTRY != '' && vars.ALIYUN_REGISTRY || secrets.ALIYUN_REGISTRY }}
-  NAMESPACE: ${{ vars.ALIYUN_NAMESPACE != '' && vars.ALIYUN_NAMESPACE || secrets.ALIYUN_NAMESPACE }}
+  NAMESPACE: ${{ vars.ALIYUN_NAME_SPACE != '' && vars.ALIYUN_NAME_SPACE || secrets.ALIYUN_NAME_SPACE }}
 
 jobs:
   build:
